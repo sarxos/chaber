@@ -1,0 +1,664 @@
+package com.github.sarxos.hbrs.hb;
+
+import java.io.IOException;
+import java.io.Serializable;
+import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.ManyToMany;
+import javax.persistence.ManyToOne;
+import javax.persistence.OneToMany;
+import javax.validation.ConstraintViolation;
+import javax.validation.Validation;
+import javax.validation.Validator;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.xpath.XPath;
+import javax.xml.xpath.XPathConstants;
+import javax.xml.xpath.XPathException;
+import javax.xml.xpath.XPathFactory;
+
+import org.hibernate.Hibernate;
+import org.hibernate.Session;
+import org.hibernate.SessionFactory;
+import org.hibernate.cfg.AnnotationConfiguration;
+import org.reflections.Reflections;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.w3c.dom.Document;
+import org.xml.sax.SAXException;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+
+/**
+ * This class provide generic access to the Hibernate persistence layer.
+ * 
+ * @author Bartosz Firyn (bfiryn)
+ */
+public abstract class PersistencyKeeper {
+
+	/**
+	 * Logger.
+	 */
+	private static final Logger LOG = LoggerFactory.getLogger(PersistencyKeeper.class);
+
+	/**
+	 * Bean validator (JSR 349).
+	 */
+	private static final Validator VALIDATOR = Validation.buildDefaultValidatorFactory().getValidator();
+
+	/**
+	 * Hibernate session factory.
+	 */
+	private static SessionFactory factory = buildSessionFactory();
+
+	/**
+	 * Hibernate session.
+	 */
+	private Session session = null;
+
+	private static List<Class<?>> daoClasses = null;
+
+	private static int batchSize = 50;
+
+	public PersistencyKeeper() {
+		session = factory.openSession();
+	}
+
+	/**
+	 * Dispose keeper. This will flush and destroy Hibernate session. Please
+	 * note that L1 Hibernate cache will not be affected by this operation.
+	 */
+	public void dispose() {
+		session.flush();
+		session.close();
+	}
+
+	/**
+	 * Create SessionFactory from hibernate.cfg.xml
+	 * 
+	 * @param packages the packages list where database entities are located
+	 * @return Session factory
+	 */
+	private static SessionFactory buildSessionFactory() {
+
+		AnnotationConfiguration ac = new AnnotationConfiguration().configure();
+
+		SessionFactory factory = null;
+		try {
+
+			for (Class<?> c : loadClasses()) {
+				ac.addAnnotatedClass(c);
+			}
+
+			factory = ac.buildSessionFactory();
+
+		} catch (Throwable e) {
+			LOG.error("Initial SessionFactory creation failed", e);
+			throw new ExceptionInInitializerError(e);
+		}
+
+		return factory;
+	}
+
+	/**
+	 * @return Return Hibernate session factory
+	 */
+	public static SessionFactory getSessionFactory() {
+		if (factory == null) {
+			throw new IllegalStateException("Hibernate has not been initialized");
+		}
+		return factory;
+	}
+
+	/**
+	 * Initialize. This will build session factory.
+	 */
+	public static void initialize() {
+		factory = buildSessionFactory();
+	}
+
+	/**
+	 * Shutdown persistence keeper. This operation will close session factory.
+	 */
+	public static void shutdown() {
+		getSessionFactory().close();
+	}
+
+	/**
+	 * @return Return current Hibernate session
+	 */
+	public Session getSession() {
+		return session;
+	}
+
+	/**
+	 * Will persist stateless (transient) entity. This method will validate
+	 * entity against possible constraints violation.
+	 * 
+	 * @param stateless the transient entity to be persisted
+	 * @return Return managed entity
+	 */
+	public <T> T persist(T stateless) {
+
+		if (stateless == null) {
+			throw new IllegalArgumentException("Transient object to be made persistent cannot be null");
+		}
+
+		if (stateless instanceof Identity) {
+			if (((Identity) stateless).getId() != null) {
+				throw new IllegalStateException("Stateless identity to be persist must not have ID set");
+			}
+		}
+
+		validate(stateless);
+
+		session.beginTransaction();
+		session.save(stateless);
+		session.getTransaction().commit();
+
+		return stateless;
+	}
+
+	/**
+	 * Will persist stateless (transient) entity. This method will validate
+	 * entity against possible constraints violation.
+	 * 
+	 * @param stateless the transient entity to be persisted
+	 * @return Return managed entity
+	 */
+	public <T> List<T> persist(List<T> stateless) {
+
+		if (stateless == null) {
+			throw new IllegalArgumentException("Transient object to be made persistent cannot be null");
+		}
+		if (stateless.isEmpty()) {
+			return stateless;
+		}
+
+		Session session = factory.openSession();
+		try {
+
+			session.beginTransaction();
+
+			int i = 0;
+			for (T s : stateless) {
+
+				if (s instanceof Identity && ((Identity) s).getId() != null) {
+					throw new IllegalStateException("Stateless identity to be persist must not have ID set");
+				}
+
+				validate(s);
+				session.save(s);
+
+				if (i++ > 0 && i % batchSize == 0) {
+					session.flush();
+					session.clear();
+				}
+			}
+
+			session.getTransaction().commit();
+
+		} finally {
+			session.clear();
+			session.close();
+		}
+
+		return stateless;
+	}
+
+	/**
+	 * Fetch entity from the database and return managed instance.
+	 * 
+	 * @param clazz the entity class to be fetched
+	 * @param id the entity ID
+	 * @return Return managed entity
+	 */
+	@SuppressWarnings("unchecked")
+	public <T> T get(Class<T> clazz, Serializable id) {
+
+		if (clazz == null) {
+			throw new IllegalArgumentException("Database entity class cannot be null");
+		}
+		if (id == null) {
+			throw new IllegalArgumentException("Database entity ID cannot be null");
+		}
+
+		return (T) session.get(clazz, id);
+	}
+
+	@SuppressWarnings("unchecked")
+	public <T extends Identity> T reget(T entity) {
+
+		if (entity instanceof Identity) {
+			if (((Identity) entity).getId() == null) {
+				throw new IllegalStateException("Only persistent entities can be reget");
+			}
+		} else {
+			throw new IllegalArgumentException("Dry entity must be an identity");
+		}
+
+		return (T) get(entity.getClass(), entity.getId());
+	}
+
+	public <T> T refresh(T entity) {
+
+		if (entity == null) {
+			throw new IllegalArgumentException("Database entity cannot be null");
+		}
+
+		session.refresh(entity);
+
+		return entity;
+	}
+
+	/**
+	 * This method will return all instances of given entity.
+	 * 
+	 * @param clazz the entity class to be fetched
+	 * @return Return list of managed objects
+	 */
+	@SuppressWarnings("unchecked")
+	public <T> List<T> get(Class<T> clazz) {
+
+		if (clazz == null) {
+			throw new IllegalArgumentException("Database entity class cannot be null");
+		}
+
+		return session.createQuery(String.format("from %s", clazz.getSimpleName())).list();
+	}
+
+	/**
+	 * Merge state of the detached instance into the corresponding managed
+	 * instance in the database.
+	 * 
+	 * @param persistent the detached or managed entity instance
+	 * @return Return managed entity
+	 */
+	public <T> T update(T persistent) {
+
+		if (persistent == null) {
+			throw new IllegalArgumentException("Persistent object to be updated cannot be null");
+		}
+
+		if (persistent instanceof Identity) {
+			if (((Identity) persistent).getId() == null) {
+				throw new IllegalStateException("Persistent identity to be updated must have ID set");
+			}
+		}
+
+		validate(persistent);
+
+		session.beginTransaction();
+		session.update(persistent);
+		session.getTransaction().commit();
+
+		return persistent;
+	}
+
+	/**
+	 * This method takes dry object taken directly from the REST layer and
+	 * hydrate it using the data from the database. It takes all fields visible
+	 * in the REST interface and populate every one of them with the database
+	 * column value if and only if given field in dry object is null.
+	 * 
+	 * @param dry the dry REST object to be hydrated
+	 * @return Return hydrated object
+	 */
+	@SuppressWarnings("unchecked")
+	public <T> T hydrate(T dry) {
+
+		if (dry == null) {
+			throw new IllegalArgumentException("Dry entity to be hydrated must not be null");
+		}
+
+		if (dry instanceof Identity) {
+			if (((Identity) dry).getId() == null) {
+				throw new IllegalStateException("Only persistent entities can be hydrated");
+			}
+		} else {
+			throw new IllegalArgumentException("Dry entity must be an identity");
+		}
+
+		Class<?> clazz = dry.getClass();
+		Serializable id = ((Identity) dry).getId();
+		T managed = (T) get(clazz, id);
+
+		for (Field f : clazz.getDeclaredFields()) {
+
+			if (!f.isAccessible()) {
+				f.setAccessible(true);
+			}
+
+			Annotation jp = f.getAnnotation(JsonProperty.class);
+			Annotation c = f.getAnnotation(Column.class);
+
+			if (jp != null && c != null) {
+
+				Object o = null;
+				try {
+					if ((o = f.get(dry)) != null) {
+						f.set(managed, o);
+					}
+				} catch (IllegalArgumentException e) {
+					throw new RuntimeException(e);
+				} catch (IllegalAccessException e) {
+					throw new RuntimeException(e);
+				}
+			}
+		}
+
+		return managed;
+	}
+
+	/**
+	 * This method takes dry object taken directly from the REST layer and
+	 * hydrate it using the data from the managed entity. It takes all fields
+	 * visible in the REST interface and populate every one of them with the
+	 * managed entity corresponding attribute value if and only if given field
+	 * in dry object is null.
+	 * 
+	 * @param dry the dry REST object to be hydrated
+	 * @param manbaed the corresponding managed entity from the DB
+	 * @return Return hydrated object
+	 */
+	public <T> T hydrate(T dry, T managed) {
+
+		if (dry == null) {
+			throw new IllegalArgumentException("Dry entity to be hydrated must not be null");
+		}
+		if (managed == null) {
+			throw new IllegalArgumentException("Managed entity to be hydrated must not be null");
+		}
+
+		if (dry instanceof Identity) {
+			if (((Identity) dry).getId() == null) {
+				throw new IllegalStateException("Only persistent entities can be hydrated");
+			}
+		} else {
+			throw new IllegalArgumentException("Dry entity must be an identity");
+		}
+
+		for (Field f : dry.getClass().getDeclaredFields()) {
+
+			if (!f.isAccessible()) {
+				f.setAccessible(true);
+			}
+
+			Annotation jp = f.getAnnotation(JsonProperty.class);
+			Annotation c = f.getAnnotation(Column.class);
+
+			if (jp != null && c != null) {
+
+				Object o = null;
+				try {
+					if ((o = f.get(dry)) != null) {
+						f.set(managed, o);
+					}
+				} catch (IllegalArgumentException e) {
+					throw new RuntimeException(e);
+				} catch (IllegalAccessException e) {
+					throw new RuntimeException(e);
+				}
+			}
+		}
+
+		return managed;
+	}
+
+	/**
+	 * Pull state of the persistent object and merge it into stateless one. This
+	 * operation will override all JSON-ignored fields value. Resultant object
+	 * is statefull but still detached. To merge statefull entity with the
+	 * database please use {@link #update(Object)}
+	 * 
+	 * @param stateless the stateless entity
+	 * @return Return stateful detached object
+	 * @deprecated Use hydration mechanism
+	 */
+	@Deprecated
+	public <T> T unignore(T stateless) {
+
+		if (stateless == null) {
+			throw new IllegalArgumentException("Stateless entity to be merged must not be null");
+		}
+
+		if (stateless instanceof Identity) {
+			if (((Identity) stateless).getId() == null) {
+				throw new IllegalStateException("Stateful identity to be updated must have ID set");
+			}
+		} else {
+			throw new IllegalArgumentException("Stateless must be identity");
+		}
+
+		if (getSession().contains(stateless)) {
+			throw new IllegalStateException("Given object must not be managed!");
+		}
+
+		Class<?> clazz = stateless.getClass();
+		Serializable id = ((Identity) stateless).getId();
+		Object entity = get(clazz, id);
+
+		getSession().evict(entity);
+
+		for (Field f : clazz.getDeclaredFields()) {
+
+			if (!f.isAccessible()) {
+				f.setAccessible(true);
+			}
+
+			Annotation ji = f.getAnnotation(JsonIgnore.class);
+
+			if (ji != null) {
+				try {
+					f.set(stateless, f.get(entity));
+				} catch (IllegalArgumentException e) {
+					throw new RuntimeException(e);
+				} catch (IllegalAccessException e) {
+					throw new RuntimeException(e);
+				}
+			}
+		}
+
+		return stateless;
+	}
+
+	/**
+	 * Delete given entity.
+	 * 
+	 * @param entity the entity to be removed
+	 * @return Return detached entity without the ID
+	 */
+	public <T> T delete(T entity) {
+
+		if (entity == null) {
+			throw new IllegalArgumentException("Persistent object to be deleted cannot be null");
+		}
+
+		session.beginTransaction();
+		session.delete(entity);
+		session.getTransaction().commit();
+
+		// detached identities must have ID set to null - this is very helpful
+		// trick which bind entity with the state which can be resolved without
+		// using Hibernate (e.g. in upper presentation layers)
+
+		if (entity instanceof Identity) {
+			((Identity) entity).setId(null);
+		}
+
+		return entity;
+	}
+
+	public <T> T evict(T entity) {
+		session.evict(entity);
+		return entity;
+	}
+
+	/**
+	 * Validate entity against constraints violation.
+	 * 
+	 * @param entity the entity to be validated
+	 * @throws EntityValidationException when entity is not valid
+	 */
+	protected static void validate(Object entity) {
+
+		Set<ConstraintViolation<Object>> violations = VALIDATOR.validate(entity);
+		if (violations.isEmpty()) {
+			return;
+		}
+
+		throw new EntityValidationException(entity, violations);
+	}
+
+	private static Class<?>[] loadClasses() throws ParserConfigurationException, SAXException, IOException, XPathException {
+
+		DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+		dbf.setValidating(false);
+		dbf.setNamespaceAware(true);
+		dbf.setFeature("http://xml.org/sax/features/namespaces", false);
+		dbf.setFeature("http://xml.org/sax/features/validation", false);
+		dbf.setFeature("http://apache.org/xml/features/nonvalidating/load-dtd-grammar", false);
+		dbf.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+
+		DocumentBuilder builder = dbf.newDocumentBuilder();
+		Document doc = builder.parse(PersistencyKeeper.class.getResourceAsStream("/hibernate.cfg.xml"));
+		XPathFactory xPathfactory = XPathFactory.newInstance();
+		XPath xpath = xPathfactory.newXPath();
+
+		String modelPackages = (String) xpath.compile("/hibernate-configuration/session-factory/property[@name='com.github.sarxos.hbrs.db.model']/text()").evaluate(doc, XPathConstants.STRING);
+
+		if (modelPackages == null) {
+			throw new IllegalStateException("Property 'com.github.sarxos.jaxrshb.db.packages' has not been defined in hibernate.cfg.xml file");
+		}
+
+		List<Class<?>> classes = new ArrayList<Class<?>>();
+		String[] splitted = modelPackages.split(",");
+
+		for (String p : splitted) {
+			if (!(p = p.trim()).isEmpty()) {
+				classes.addAll(new Reflections(p).getTypesAnnotatedWith(Entity.class));
+			}
+		}
+
+		if (LOG.isInfoEnabled()) {
+			StringBuilder sb = new StringBuilder("The following entity classes has been found:");
+			for (Class<?> c : classes) {
+				sb.append("\n  ").append(c);
+			}
+			LOG.info(sb.toString());
+		}
+
+		return classes.toArray(new Class<?>[classes.size()]);
+	}
+
+	private static final List<Class<?>> getDaoClasses0() throws ParserConfigurationException, SAXException, IOException, XPathException {
+
+		DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+		dbf.setValidating(false);
+		dbf.setNamespaceAware(true);
+		dbf.setFeature("http://xml.org/sax/features/namespaces", false);
+		dbf.setFeature("http://xml.org/sax/features/validation", false);
+		dbf.setFeature("http://apache.org/xml/features/nonvalidating/load-dtd-grammar", false);
+		dbf.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+
+		DocumentBuilder builder = dbf.newDocumentBuilder();
+		Document doc = builder.parse(PersistencyKeeper.class.getResourceAsStream("/hibernate.cfg.xml"));
+		XPathFactory xPathfactory = XPathFactory.newInstance();
+		XPath xpath = xPathfactory.newXPath();
+
+		String batchSizeStr = (String) xpath.compile("/hibernate-configuration/session-factory/property[@name='hibernate.jdbc.batch_size']/text()").evaluate(doc, XPathConstants.STRING);
+		if (batchSizeStr != null && !batchSizeStr.isEmpty()) {
+			batchSize = Integer.parseInt(batchSizeStr);
+		}
+
+		String daoPackage = (String) xpath.compile("/hibernate-configuration/session-factory/property[@name='com.github.sarxos.hbrs.db.dao']/text()").evaluate(doc, XPathConstants.STRING);
+
+		if (daoPackage == null || daoPackage.trim().isEmpty()) {
+			throw new IllegalStateException("Database DAO package must be provided");
+		}
+
+		List<Class<?>> daoClasses = new ArrayList<Class<?>>();
+		String[] splitted = daoPackage.split(",");
+
+		for (String p : splitted) {
+			if (!(p = p.trim()).isEmpty()) {
+				daoClasses.addAll(new Reflections(p).getSubTypesOf(PersistencyKeeper.class));
+			}
+		}
+
+		if (LOG.isInfoEnabled()) {
+			StringBuilder sb = new StringBuilder("The following database DAO classes has been found:");
+			for (Class<?> c : daoClasses) {
+				sb.append("\n  ").append(c);
+			}
+			LOG.info(sb.toString());
+		}
+
+		return daoClasses;
+	}
+
+	public static List<Class<?>> getDaoClasses() {
+		if (daoClasses == null) {
+			try {
+				daoClasses = getDaoClasses0();
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		}
+		return daoClasses;
+	}
+
+	/**
+	 * Initialize all lazy-loaded first-level entities which are not
+	 * JSON-ignored.
+	 * 
+	 * @param entity the entity from which fields will be lazy loaded
+	 * @return Return the same object with lazy fields initialized
+	 */
+	public <T> T lazyload(T entity) {
+
+		if (entity == null) {
+			throw new IllegalArgumentException("REST entity cannot be null");
+		}
+
+		for (Field f : entity.getClass().getDeclaredFields()) {
+
+			if (!f.isAccessible()) {
+				f.setAccessible(true);
+			}
+
+			Annotation ji = f.getAnnotation(JsonIgnore.class);
+			if (ji != null) {
+				continue;
+			}
+
+			Annotation mto = f.getAnnotation(ManyToOne.class);
+			Annotation otm = f.getAnnotation(OneToMany.class);
+			Annotation mtm = f.getAnnotation(ManyToMany.class);
+
+			if (mto != null || otm != null || mtm != null) {
+				try {
+					Object o = f.get(entity);
+					if (!Hibernate.isInitialized(o)) {
+						Hibernate.initialize(o);
+					}
+				} catch (IllegalArgumentException e) {
+					throw new RuntimeException(e);
+				} catch (IllegalAccessException e) {
+					throw new RuntimeException(e);
+				}
+			}
+		}
+
+		return entity;
+	}
+}
