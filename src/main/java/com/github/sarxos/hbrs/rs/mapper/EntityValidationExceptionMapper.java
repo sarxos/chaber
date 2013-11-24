@@ -22,23 +22,28 @@ public class EntityValidationExceptionMapper implements ExceptionMapper<EntityVa
 	public Response toResponse(EntityValidationException exception) {
 
 		Set<ConstraintViolation<Object>> violations = exception.getViolations();
-		Map<String, List<String>> messages = new HashMap<String, List<String>>();
+
+		Map<String, List<String>> vmap = new HashMap<String, List<String>>();
 
 		for (ConstraintViolation<Object> violation : violations) {
 
 			String property = violation.getPropertyPath().toString();
+			List<String> list = vmap.get(property);
 
-			List<String> list = messages.get(property);
 			if (list == null) {
-				messages.put(property, list = new ArrayList<String>());
+				vmap.put(property, list = new ArrayList<String>());
 			}
 
 			list.add(violation.getMessage());
 		}
 
+		Map<String, Object> r = new HashMap<String, Object>();
+		r.put("message", String.format("%s entity validation failed", exception.getEntity().getClass().getSimpleName()));
+		r.put("fields", vmap);
+
 		return Response
 			.status(Status.BAD_REQUEST)
-			.entity(messages)
+			.entity(r)
 			.build();
 	}
 }

@@ -60,14 +60,14 @@ public abstract class PersistencyKeeper {
 	 */
 	private static SessionFactory factory = buildSessionFactory();
 
-	/**
-	 * Hibernate session.
-	 */
-	private Session session = null;
-
 	private static List<Class<?>> daoClasses = null;
 
 	private static int batchSize = 50;
+
+	/**
+	 * Hibernate session.
+	 */
+	private final Session session;
 
 	public PersistencyKeeper() {
 		session = factory.openSession();
@@ -138,6 +138,14 @@ public abstract class PersistencyKeeper {
 	 */
 	public Session getSession() {
 		return session;
+	}
+
+	private <T> boolean isEntity(Class<T> c) {
+		Class<?> cc = c;
+		if (c.getAnnotation(Entity.class) == null) {
+			return (cc = cc.getSuperclass()) == null ? false : isEntity(cc);
+		}
+		return true;
 	}
 
 	/**
@@ -260,6 +268,39 @@ public abstract class PersistencyKeeper {
 		return entity;
 	}
 
+	public <T> int count(Class<T> clazz) {
+
+		if (clazz == null) {
+			throw new IllegalArgumentException("Database entity class cannot be null");
+		}
+		if (!isEntity(clazz)) {
+			throw new IllegalArgumentException(String.format("Class %s is not a database entity", clazz.getName()));
+		}
+
+		return (Integer) session
+			.createQuery(String.format("select count(*) from %s", clazz.getSimpleName()))
+			.uniqueResult();
+	}
+
+	public <T> boolean exists(Class<T> clazz, Serializable id) {
+
+		if (clazz == null) {
+			throw new IllegalArgumentException("Database entity class cannot be null");
+		}
+		if (id == null) {
+			throw new IllegalArgumentException("Entity ID cannot benull");
+		}
+		if (!isEntity(clazz)) {
+			throw new IllegalArgumentException(String.format("Class %s is not a database entity", clazz.getName()));
+		}
+
+		long count = (Long) session
+			.createQuery(String.format("select count(*) from %s", clazz.getSimpleName()))
+			.uniqueResult();
+
+		return count > 0;
+	}
+
 	/**
 	 * This method will return all instances of given entity.
 	 * 
@@ -267,41 +308,83 @@ public abstract class PersistencyKeeper {
 	 * @return Return list of managed objects
 	 */
 	@SuppressWarnings("unchecked")
-	public <T> List<T> get(Class<T> clazz) {
+	public <T> List<T> list(Class<T> clazz) {
 
 		if (clazz == null) {
 			throw new IllegalArgumentException("Database entity class cannot be null");
 		}
+		if (!isEntity(clazz)) {
+			throw new IllegalArgumentException(String.format("Class %s is not a database entity", clazz.getName()));
+		}
 
-		return session.createQuery(String.format("from %s", clazz.getSimpleName())).list();
+		return session
+			.createQuery(String.format("from %s", clazz.getSimpleName()))
+			.list();
+	}
+
+	/**
+	 * Return paged result with specific entities inside.
+	 * 
+	 * @param clazz the entity class
+	 * @param pgNum the first record offset
+	 * @param pgSize the max number of records per page
+	 * @return Paged result
+	 */
+	@SuppressWarnings("unchecked")
+	public <T> List<T> list(Class<T> clazz, int pgNum, int pgSize) {
+
+		if (clazz == null) {
+			throw new IllegalArgumentException("Database entity class cannot be null");
+		}
+		if (!isEntity(clazz)) {
+			throw new IllegalArgumentException(String.format("Class %s is not a database entity", clazz.getName()));
+		}
+		if (pgNum < 0) {
+			throw new IllegalArgumentException("Offset cannot be negative");
+		}
+		if (pgSize <= 0) {
+			throw new IllegalArgumentException("Max records count must be positive");
+		}
+
+		return session
+			.createQuery(String.format("from %s", clazz.getSimpleName()))
+			.setFirstResult(pgNum * pgSize)
+			.setMaxResults(pgSize)
+			.list();
 	}
 
 	/**
 	 * Merge state of the detached instance into the corresponding managed
 	 * instance in the database.
 	 * 
-	 * @param persistent the detached or managed entity instance
+	 * @param entity the detached or managed entity instance
 	 * @return Return managed entity
 	 */
-	public <T> T update(T persistent) {
+	public <T> T update(T entity) {
 
-		if (persistent == null) {
+		if (entity == null) {
 			throw new IllegalArgumentException("Persistent object to be updated cannot be null");
 		}
 
-		if (persistent instanceof Identity) {
-			if (((Identity) persistent).getId() == null) {
+		Class<?> clazz = entity.getClass();
+
+		if (!isEntity(clazz)) {
+			throw new IllegalArgumentException(String.format("Class %s is not a database entity", clazz.getName()));
+		}
+
+		if (entity instanceof Identity) {
+			if (((Identity) entity).getId() == null) {
 				throw new IllegalStateException("Persistent identity to be updated must have ID set");
 			}
 		}
 
-		validate(persistent);
+		validate(entity);
 
 		session.beginTransaction();
-		session.update(persistent);
+		session.update(entity);
 		session.getTransaction().commit();
 
-		return persistent;
+		return entity;
 	}
 
 	/**
@@ -314,21 +397,21 @@ public abstract class PersistencyKeeper {
 	 * @return Return hydrated object
 	 */
 	@SuppressWarnings("unchecked")
-	public <T> T hydrate(T dry) {
+	public <T extends Identity> T hydrate(T dry) {
 
 		if (dry == null) {
 			throw new IllegalArgumentException("Dry entity to be hydrated must not be null");
 		}
-
-		if (dry instanceof Identity) {
-			if (((Identity) dry).getId() == null) {
-				throw new IllegalStateException("Only persistent entities can be hydrated");
-			}
-		} else {
-			throw new IllegalArgumentException("Dry entity must be an identity");
+		if (dry.getId() == null) {
+			throw new IllegalStateException("Only persistent entities can be hydrated");
 		}
 
 		Class<?> clazz = dry.getClass();
+
+		if (!isEntity(clazz)) {
+			throw new IllegalArgumentException(String.format("Class %s is not a database entity", clazz.getName()));
+		}
+
 		Serializable id = ((Identity) dry).getId();
 		T managed = (T) get(clazz, id);
 
@@ -342,15 +425,12 @@ public abstract class PersistencyKeeper {
 			Annotation c = f.getAnnotation(Column.class);
 
 			if (jp != null && c != null) {
-
 				Object o = null;
 				try {
 					if ((o = f.get(dry)) != null) {
 						f.set(managed, o);
 					}
-				} catch (IllegalArgumentException e) {
-					throw new RuntimeException(e);
-				} catch (IllegalAccessException e) {
+				} catch (Exception e) {
 					throw new RuntimeException(e);
 				}
 			}

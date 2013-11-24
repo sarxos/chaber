@@ -18,7 +18,7 @@ import com.sun.jersey.spi.resource.Singleton;
 
 /**
  * Provides context instances extending {@link PersistencyKeeper} abstraction
- * (or more simple, DB DAOs).
+ * (or more simply, DB DAOs).
  * 
  * @author Bartosz Firyn (bfiryn)
  */
