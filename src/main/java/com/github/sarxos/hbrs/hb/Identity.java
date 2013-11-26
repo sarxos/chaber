@@ -1,9 +1,12 @@
 package com.github.sarxos.hbrs.hb;
 
-public interface Identity {
+import java.io.Serializable;
 
-	void setId(Long id);
 
-	Long getId();
+public interface Identity<T extends Serializable> {
+
+	void setId(T id);
+
+	T getId();
 
 }

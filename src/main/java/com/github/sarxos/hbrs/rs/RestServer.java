@@ -16,6 +16,7 @@ import org.mortbay.jetty.bio.SocketConnector;
 import org.mortbay.jetty.webapp.WebAppContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.xml.sax.EntityResolver;
 import org.xml.sax.ErrorHandler;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
@@ -104,6 +105,18 @@ public class RestServer implements Runnable {
 			}
 		});
 
+		builder.setEntityResolver(new EntityResolver() {
+
+			@Override
+			public InputSource resolveEntity(String publicId, String systemId) throws SAXException, IOException {
+				if (systemId.contains("web-app_2_3.dtd")) {
+					return new InputSource(getClass().getResourceAsStream("/web-app_2_3.dtd"));
+				} else {
+					return null;
+				}
+			}
+		});
+
 		Reader r = null;
 		try {
 			builder.parse(new InputSource(r = new FileReader(webxml)));
@@ -153,6 +166,8 @@ public class RestServer implements Runnable {
 		}
 
 		if (started.compareAndSet(false, true)) {
+
+			LOG.info("Starting embedded Chaber server");
 
 			Thread t = new Thread(this);
 			t.setDaemon(true);

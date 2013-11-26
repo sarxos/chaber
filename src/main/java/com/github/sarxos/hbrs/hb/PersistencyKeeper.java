@@ -25,9 +25,12 @@ import javax.xml.xpath.XPathException;
 import javax.xml.xpath.XPathFactory;
 
 import org.hibernate.Hibernate;
+import org.hibernate.Query;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
+import org.hibernate.Transaction;
 import org.hibernate.cfg.AnnotationConfiguration;
+import org.hibernate.metadata.ClassMetadata;
 import org.reflections.Reflections;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -142,7 +145,7 @@ public abstract class PersistencyKeeper {
 
 	private <T> boolean isEntity(Class<T> c) {
 		Class<?> cc = c;
-		if (c.getAnnotation(Entity.class) == null) {
+		if (cc.getAnnotation(Entity.class) == null) {
 			return (cc = cc.getSuperclass()) == null ? false : isEntity(cc);
 		}
 		return true;
@@ -162,7 +165,7 @@ public abstract class PersistencyKeeper {
 		}
 
 		if (stateless instanceof Identity) {
-			if (((Identity) stateless).getId() != null) {
+			if (((Identity<?>) stateless).getId() != null) {
 				throw new IllegalStateException("Stateless identity to be persist must not have ID set");
 			}
 		}
@@ -200,7 +203,7 @@ public abstract class PersistencyKeeper {
 			int i = 0;
 			for (T s : stateless) {
 
-				if (s instanceof Identity && ((Identity) s).getId() != null) {
+				if (s instanceof Identity && ((Identity<?>) s).getId() != null) {
 					throw new IllegalStateException("Stateless identity to be persist must not have ID set");
 				}
 
@@ -244,10 +247,10 @@ public abstract class PersistencyKeeper {
 	}
 
 	@SuppressWarnings("unchecked")
-	public <T extends Identity> T reget(T entity) {
+	public <T extends Identity<?>> T reget(T entity) {
 
 		if (entity instanceof Identity) {
-			if (((Identity) entity).getId() == null) {
+			if (((Identity<?>) entity).getId() == null) {
 				throw new IllegalStateException("Only persistent entities can be reget");
 			}
 		} else {
@@ -294,15 +297,23 @@ public abstract class PersistencyKeeper {
 			throw new IllegalArgumentException(String.format("Class %s is not a database entity", clazz.getName()));
 		}
 
+		ClassMetadata cm = getSessionFactory().getClassMetadata(clazz);
+
+		String idn = cm.getIdentifierPropertyName();
+		String csn = clazz.getSimpleName();
+
 		long count = (Long) session
-			.createQuery(String.format("select count(*) from %s", clazz.getSimpleName()))
+			.createQuery(String.format("select count(*) from %s e where e.%s = :id", csn, idn))
+			.setSerializable("id", id)
 			.uniqueResult();
 
 		return count > 0;
 	}
 
 	/**
-	 * This method will return all instances of given entity.
+	 * This method will return all instances of given entity. Be careful when
+	 * using this method because there can be millions of records in the
+	 * database, and thus, your memory consumption may gone wild.
 	 * 
 	 * @param clazz the entity class to be fetched
 	 * @return Return list of managed objects
@@ -373,16 +384,23 @@ public abstract class PersistencyKeeper {
 		}
 
 		if (entity instanceof Identity) {
-			if (((Identity) entity).getId() == null) {
+			if (((Identity<?>) entity).getId() == null) {
 				throw new IllegalStateException("Persistent identity to be updated must have ID set");
 			}
 		}
 
 		validate(entity);
 
-		session.beginTransaction();
-		session.update(entity);
-		session.getTransaction().commit();
+		Transaction t = session.beginTransaction();
+
+		try {
+			session.update(entity);
+		} catch (Exception e) {
+			t.rollback();
+			throw new RuntimeException(e);
+		}
+
+		t.commit();
 
 		return entity;
 	}
@@ -397,7 +415,7 @@ public abstract class PersistencyKeeper {
 	 * @return Return hydrated object
 	 */
 	@SuppressWarnings("unchecked")
-	public <T extends Identity> T hydrate(T dry) {
+	public <T extends Identity<?>> T hydrate(T dry) {
 
 		if (dry == null) {
 			throw new IllegalArgumentException("Dry entity to be hydrated must not be null");
@@ -412,7 +430,7 @@ public abstract class PersistencyKeeper {
 			throw new IllegalArgumentException(String.format("Class %s is not a database entity", clazz.getName()));
 		}
 
-		Serializable id = ((Identity) dry).getId();
+		Serializable id = ((Identity<?>) dry).getId();
 		T managed = (T) get(clazz, id);
 
 		for (Field f : clazz.getDeclaredFields()) {
@@ -460,7 +478,7 @@ public abstract class PersistencyKeeper {
 		}
 
 		if (dry instanceof Identity) {
-			if (((Identity) dry).getId() == null) {
+			if (((Identity<?>) dry).getId() == null) {
 				throw new IllegalStateException("Only persistent entities can be hydrated");
 			}
 		} else {
@@ -512,7 +530,7 @@ public abstract class PersistencyKeeper {
 		}
 
 		if (stateless instanceof Identity) {
-			if (((Identity) stateless).getId() == null) {
+			if (((Identity<?>) stateless).getId() == null) {
 				throw new IllegalStateException("Stateful identity to be updated must have ID set");
 			}
 		} else {
@@ -524,7 +542,7 @@ public abstract class PersistencyKeeper {
 		}
 
 		Class<?> clazz = stateless.getClass();
-		Serializable id = ((Identity) stateless).getId();
+		Serializable id = ((Identity<?>) stateless).getId();
 		Object entity = get(clazz, id);
 
 		getSession().evict(entity);
@@ -563,19 +581,67 @@ public abstract class PersistencyKeeper {
 			throw new IllegalArgumentException("Persistent object to be deleted cannot be null");
 		}
 
-		session.beginTransaction();
-		session.delete(entity);
-		session.getTransaction().commit();
+		Transaction t = session.beginTransaction();
+
+		try {
+			session.delete(entity);
+		} catch (Exception e) {
+			t.rollback();
+			throw new RuntimeException(e);
+		}
+
+		t.commit();
 
 		// detached identities must have ID set to null - this is very helpful
 		// trick which bind entity with the state which can be resolved without
 		// using Hibernate (e.g. in upper presentation layers)
 
 		if (entity instanceof Identity) {
-			((Identity) entity).setId(null);
+			((Identity<?>) entity).setId(null);
 		}
 
-		return entity;
+		return evict(entity);
+	}
+
+	/**
+	 * Delete entity of given class with given ID.
+	 * 
+	 * @param clazz the entity class
+	 * @param id the entity ID
+	 * @return Return true if entity was removed, false otherwise
+	 */
+	public <T extends Identity<?>> boolean delete(Class<T> clazz, Serializable id) {
+
+		if (clazz == null) {
+			throw new IllegalArgumentException("Entity class cannot be null");
+		}
+		if (id == null) {
+			throw new IllegalArgumentException("Entity ID cannot be null");
+		}
+
+		ClassMetadata cm = getSessionFactory().getClassMetadata(clazz);
+
+		String idn = cm.getIdentifierPropertyName();
+		String csn = clazz.getSimpleName();
+
+		Query q = session
+			.createQuery(String.format("delete from %s e where e.%s = :id", csn, idn))
+			.setSerializable("id", id);
+
+		int count = -1;
+
+		Transaction t = session.beginTransaction();
+
+		try {
+			count = q.executeUpdate();
+		} catch (Exception e) {
+			t.rollback();
+			throw new RuntimeException(e);
+		}
+
+		t.commit();
+
+		return count > 0;
 	}
 
 	public <T> T evict(T entity) {
