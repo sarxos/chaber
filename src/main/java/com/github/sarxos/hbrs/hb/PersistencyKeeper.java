@@ -24,6 +24,7 @@ import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathException;
 import javax.xml.xpath.XPathFactory;
 
+import org.glassfish.jersey.process.internal.RequestScoped;
 import org.hibernate.Hibernate;
 import org.hibernate.Query;
 import org.hibernate.Session;
@@ -46,6 +47,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * 
  * @author Bartosz Firyn (bfiryn)
  */
+@RequestScoped
 public abstract class PersistencyKeeper {
 
 	/**
