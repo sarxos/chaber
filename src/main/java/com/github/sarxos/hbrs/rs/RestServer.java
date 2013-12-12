@@ -10,10 +10,15 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 
-import org.mortbay.jetty.Connector;
-import org.mortbay.jetty.Server;
-import org.mortbay.jetty.bio.SocketConnector;
-import org.mortbay.jetty.webapp.WebAppContext;
+import org.eclipse.jetty.server.Connector;
+import org.eclipse.jetty.server.HttpConfiguration;
+import org.eclipse.jetty.server.HttpConnectionFactory;
+import org.eclipse.jetty.server.SecureRequestCustomizer;
+import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.server.ServerConnector;
+import org.eclipse.jetty.server.SslConnectionFactory;
+import org.eclipse.jetty.util.ssl.SslContextFactory;
+import org.eclipse.jetty.webapp.WebAppContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xml.sax.EntityResolver;
@@ -37,7 +42,20 @@ public class RestServer implements Runnable {
 
 	private String webApplicationPath = null;
 
-	private int port = 8080;
+	private int port = 8081;
+
+	private Connector connector = null;
+
+	public void setConnector(Connector connector) {
+		this.connector = connector;
+	}
+
+	public Connector getConnector() {
+		if (connector == null) {
+			throw new IllegalStateException("Connector cannot be null!");
+		}
+		return connector;
+	}
 
 	/**
 	 * Set web application path.
@@ -198,21 +216,40 @@ public class RestServer implements Runnable {
 	@Override
 	public void run() {
 
-		SocketConnector connector = new SocketConnector();
-		connector.setMaxIdleTime(1000 * 60 * 60); // long timeout (1h)
-		connector.setSoLingerTime(-1);
-		connector.setPort(port);
-
 		Server server = new Server();
-		server.setConnectors(new Connector[] { connector });
+
+		HttpConfiguration http_config = new HttpConfiguration();
+		http_config.setSecureScheme("https");
+		http_config.setSecurePort(8443);
+		http_config.setOutputBufferSize(32768);
+		http_config.setSendServerVersion(false);
+		http_config.setSendXPoweredBy(false);
+
+		ServerConnector http = new ServerConnector(server, new HttpConnectionFactory(http_config));
+		http.setPort(8081);
+		http.setIdleTimeout(30000);
+
+		SslContextFactory sslContextFactory = new SslContextFactory();
+		sslContextFactory.setKeyStorePath("src/main/resources/keystore.jks");
+		sslContextFactory.setKeyStorePassword("OBF:1qpb1u2a1xmq1wu01v8s1lz31v9u1wue1xmk1u301qq7");
+		sslContextFactory.setKeyManagerPassword("OBF:1qpb1u2a1xmq1wu01v8s1lz31v9u1wue1xmk1u301qq7");
+		sslContextFactory.setCertAlias("jetty");
+
+		HttpConfiguration https_config = new HttpConfiguration(http_config);
+		https_config.addCustomizer(new SecureRequestCustomizer());
+
+		ServerConnector https = new ServerConnector(server, new SslConnectionFactory(sslContextFactory, "http/1.1"), new HttpConnectionFactory(https_config));
+		https.setPort(8443);
+		https.setIdleTimeout(500000);
+
+		server.setConnectors(new Connector[] { http, https });
 
 		WebAppContext ctx = new WebAppContext();
 		ctx.setServer(server);
 		ctx.setContextPath("/");
 		ctx.setWar(webApplicationPath);
 
-		server.addHandler(ctx);
-		server.setSendServerVersion(false);
+		server.setHandler(ctx);
 
 		try {
 			server.start();

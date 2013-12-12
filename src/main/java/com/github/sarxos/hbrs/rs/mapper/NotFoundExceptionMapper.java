@@ -1,6 +1,8 @@
 package com.github.sarxos.hbrs.rs.mapper;
 
+import javax.ws.rs.NotFoundException;
 import javax.ws.rs.core.Response;
+import javax.ws.rs.core.Response.Status;
 import javax.ws.rs.ext.Provider;
 
 import org.slf4j.Logger;
@@ -17,16 +19,15 @@ import com.github.sarxos.hbrs.rs.AbstractExceptionMapper;
  * @author Bartosz Firyn (sarxos)
  */
 @Provider
-public class FallbackExceptionMapper extends AbstractExceptionMapper<Throwable> {
+public class NotFoundExceptionMapper extends AbstractExceptionMapper<NotFoundException> {
 
 	/**
 	 * Yup, this is a logger.
 	 */
-	private static final Logger LOG = LoggerFactory.getLogger(FallbackExceptionMapper.class);
+	private static final Logger LOG = LoggerFactory.getLogger(NotFoundExceptionMapper.class);
 
 	@Override
-	public Response toResponse(Throwable exception) {
-		LOG.error(exception.getMessage(), exception);
-		return build(exception);
+	public Response toResponse(NotFoundException exception) {
+		return build(exception, Status.NOT_FOUND);
 	}
 }

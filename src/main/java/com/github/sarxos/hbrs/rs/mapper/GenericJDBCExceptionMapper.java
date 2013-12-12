@@ -4,18 +4,20 @@ import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Map;
 
+import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
-import javax.ws.rs.ext.ExceptionMapper;
 import javax.ws.rs.ext.Provider;
 
 import org.hibernate.exception.GenericJDBCException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.github.sarxos.hbrs.rs.AbstractExceptionMapper;
+
 
 @Provider
-public class GenericJDBCExceptionMapper implements ExceptionMapper<GenericJDBCException> {
+public class GenericJDBCExceptionMapper extends AbstractExceptionMapper<GenericJDBCException> {
 
 	private static final Logger LOG = LoggerFactory.getLogger(GenericJDBCExceptionMapper.class);
 
@@ -53,6 +55,7 @@ public class GenericJDBCExceptionMapper implements ExceptionMapper<GenericJDBCEx
 
 		return Response
 			.status(Status.BAD_REQUEST)
+			.type(MediaType.APPLICATION_JSON)
 			.entity(r)
 			.build();
 	}

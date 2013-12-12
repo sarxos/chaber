@@ -8,17 +8,18 @@ import java.util.Map;
 import java.util.Set;
 
 import javax.validation.ConstraintViolation;
+import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
-import javax.ws.rs.ext.ExceptionMapper;
 import javax.ws.rs.ext.Provider;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.github.sarxos.hbrs.hb.EntityValidationException;
+import com.github.sarxos.hbrs.rs.AbstractExceptionMapper;
 
 
 @Provider
-public class EntityValidationExceptionMapper implements ExceptionMapper<EntityValidationException> {
+public class EntityValidationExceptionMapper extends AbstractExceptionMapper<EntityValidationException> {
 
 	@Override
 	public Response toResponse(EntityValidationException exception) {
@@ -66,6 +67,7 @@ public class EntityValidationExceptionMapper implements ExceptionMapper<EntityVa
 
 		return Response
 			.status(Status.BAD_REQUEST)
+			.type(MediaType.APPLICATION_JSON)
 			.entity(r)
 			.build();
 	}
