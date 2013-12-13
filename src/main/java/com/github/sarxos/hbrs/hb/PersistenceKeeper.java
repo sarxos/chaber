@@ -55,6 +55,17 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 @RequestScoped
 public abstract class PersistenceKeeper implements Closeable {
 
+	private static enum CommitType {
+
+		SAVE,
+
+		UPDATE,
+
+		MERGE,
+
+		PERSIST,
+	}
+
 	/**
 	 * Logger.
 	 */
@@ -208,44 +219,12 @@ public abstract class PersistenceKeeper implements Closeable {
 	 * @param stateless the transient entity to be persisted
 	 * @return Return managed entity
 	 */
-	public <T extends Identity<?>> List<T> persist(List<T> stateless) {
+	public <T extends Identity<?>> Collection<T> persist(Collection<T> entities) {
+		return store(entities, CommitType.PERSIST);
+	}
 
-		if (stateless == null) {
-			throw new IllegalArgumentException("Transient object to be made persistent cannot be null");
-		}
-		if (stateless.isEmpty()) {
-			return stateless;
-		}
-
-		Session session = factory.openSession();
-		try {
-
-			session.beginTransaction();
-
-			int i = 0;
-			for (T s : stateless) {
-
-				if (s.getId() != null) {
-					throw new IllegalStateException("Stateless identity to be persist must not have ID set");
-				}
-
-				validate(s);
-				session.save(s);
-
-				if (i++ > 0 && i % batchSize == 0) {
-					session.flush();
-					session.clear();
-				}
-			}
-
-			session.getTransaction().commit();
-
-		} finally {
-			session.clear();
-			session.close();
-		}
-
-		return stateless;
+	public <T extends Identity<?>> Collection<T> save(Collection<T> entities) {
+		return store(entities, CommitType.SAVE);
 	}
 
 	/**
@@ -307,7 +286,15 @@ public abstract class PersistenceKeeper implements Closeable {
 			.uniqueResult();
 	}
 
-	public <T> boolean exists(Class<T> clazz, Serializable id) {
+	/**
+	 * Check if entity of given class and with the specified ID exists in the
+	 * database.
+	 * 
+	 * @param clazz the entity class
+	 * @param id the entity ID
+	 * @return Return true if entity exists, false otherwise
+	 */
+	public <T extends Identity<?>> boolean exists(Class<T> clazz, Serializable id) {
 
 		if (clazz == null) {
 			throw new IllegalArgumentException("Database entity class cannot be null");
@@ -415,7 +402,7 @@ public abstract class PersistenceKeeper implements Closeable {
 
 		try {
 			session.update(entity);
-		} catch (Exception e) {
+		} catch (HibernateException e) {
 			t.rollback();
 			throw new RuntimeException(e);
 		}
@@ -425,10 +412,8 @@ public abstract class PersistenceKeeper implements Closeable {
 		return entity;
 	}
 
-	private static enum CommitType {
-		SAVE,
-		UPDATE,
-		MERGE,
+	public <T extends Identity<?>> Collection<T> update(Collection<T> entities) {
+		return store(entities, CommitType.UPDATE);
 	}
 
 	public <T extends Identity<?>> Collection<T> merge(Collection<T> entities) {
@@ -443,24 +428,46 @@ public abstract class PersistenceKeeper implements Closeable {
 
 		Class<?> clazz = null;
 
-		Session s = getSession();
+		Session s = null;
+
+		if (entities.size() >= batchSize) {
+			s = factory.openSession();
+		} else {
+			s = getSession();
+		}
+
 		Transaction t = s.beginTransaction();
 
 		try {
 
+			int i = 0;
 			for (T entity : entities) {
+
+				// TODO: move to mapping
 
 				if (!isEntity(clazz = entity.getClass())) {
 					throw new IllegalArgumentException(String.format("Class %s is not a database entity", clazz.getName()));
 				}
 
-				if (entity.getId() == null) {
-					throw new IllegalStateException("Persistent identity to be updated must have ID set");
+				// for update commits we have to verify if ID is set
+
+				switch (type) {
+					case UPDATE:
+					case MERGE:
+						if (entity.getId() == null) {
+							throw new IllegalStateException("Persistent identity to be stored must have ID set");
+						}
+						break;
+					default:
+						break;
 				}
 
 				validate(entity);
 
 				switch (type) {
+					case PERSIST:
+						s.persist(entity);
+						break;
 					case SAVE:
 						s.save(entity);
 						break;
@@ -471,14 +478,32 @@ public abstract class PersistenceKeeper implements Closeable {
 						s.merge(entity);
 						break;
 				}
+
+				// batch mode
+
+				if (s != getSession()) {
+					if (i++ > 0 && i % batchSize == 0) {
+						s.flush();
+						s.clear();
+					}
+				}
 			}
+
+			t.commit();
 
 		} catch (HibernateException e) {
 			t.rollback();
 			throw new RuntimeException(e);
-		}
+		} finally {
 
-		t.commit();
+			// in case of batch mode
+
+			if (s != getSession()) {
+				s.flush();
+				s.clear();
+				s.close();
+			}
+		}
 
 		return entities;
 	}
@@ -859,5 +884,15 @@ public abstract class PersistenceKeeper implements Closeable {
 		}
 
 		return entity;
+	}
+
+	@SuppressWarnings("unchecked")
+	public <T extends Identity<?>> T load(Class<T> clazz, Serializable id) {
+
+		if (!isEntity(clazz)) {
+			throw new IllegalArgumentException(String.format("Class %s is not an identity", clazz.getName()));
+		}
+
+		return (T) getSession().load(clazz, id);
 	}
 }
