@@ -1,10 +1,12 @@
 package com.github.sarxos.hbrs.hb;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.Serializable;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 
@@ -26,9 +28,11 @@ import javax.xml.xpath.XPathFactory;
 
 import org.glassfish.jersey.process.internal.RequestScoped;
 import org.hibernate.Hibernate;
+import org.hibernate.HibernateException;
 import org.hibernate.Query;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
+import org.hibernate.StatelessSession;
 import org.hibernate.Transaction;
 import org.hibernate.cfg.AnnotationConfiguration;
 import org.hibernate.metadata.ClassMetadata;
@@ -43,17 +47,18 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 
 /**
- * This class provide generic access to the Hibernate persistence layer.
+ * This class provide generic access to the Hibernate persistence layer. It's
+ * very important to close persistence keeper when it's no longer necessary.
  * 
  * @author Bartosz Firyn (bfiryn)
  */
 @RequestScoped
-public abstract class PersistencyKeeper {
+public abstract class PersistenceKeeper implements Closeable {
 
 	/**
 	 * Logger.
 	 */
-	private static final Logger LOG = LoggerFactory.getLogger(PersistencyKeeper.class);
+	private static final Logger LOG = LoggerFactory.getLogger(PersistenceKeeper.class);
 
 	/**
 	 * Bean validator (JSR 349).
@@ -74,17 +79,27 @@ public abstract class PersistencyKeeper {
 	 */
 	private final Session session;
 
-	public PersistencyKeeper() {
-		session = factory.openSession();
+	private StatelessSession statelessSession;
+
+	public PersistenceKeeper() {
+		session = getSessionFactory().openSession();
 	}
 
 	/**
 	 * Dispose keeper. This will flush and destroy Hibernate session. Please
 	 * note that L1 Hibernate cache will not be affected by this operation.
 	 */
-	public void dispose() {
+	@Override
+	public void close() {
+
+		LOG.debug("Closing persistence keeper");
+
 		session.flush();
 		session.close();
+
+		if (statelessSession != null) {
+			statelessSession.close();
+		}
 	}
 
 	/**
@@ -145,6 +160,13 @@ public abstract class PersistencyKeeper {
 		return session;
 	}
 
+	public StatelessSession getStatelessSession() {
+		if (statelessSession == null) {
+			statelessSession = getSessionFactory().openStatelessSession();
+		}
+		return statelessSession;
+	}
+
 	private <T> boolean isEntity(Class<T> c) {
 		Class<?> cc = c;
 		if (cc.getAnnotation(Entity.class) == null) {
@@ -160,16 +182,14 @@ public abstract class PersistencyKeeper {
 	 * @param stateless the transient entity to be persisted
 	 * @return Return managed entity
 	 */
-	public <T> T persist(T stateless) {
+	public <T extends Identity<?>> T persist(T stateless) {
 
 		if (stateless == null) {
 			throw new IllegalArgumentException("Transient object to be made persistent cannot be null");
 		}
 
-		if (stateless instanceof Identity) {
-			if (((Identity<?>) stateless).getId() != null) {
-				throw new IllegalStateException("Stateless identity to be persist must not have ID set");
-			}
+		if (stateless.getId() != null) {
+			throw new IllegalStateException("Stateless identity to be persist must not have ID set");
 		}
 
 		validate(stateless);
@@ -188,7 +208,7 @@ public abstract class PersistencyKeeper {
 	 * @param stateless the transient entity to be persisted
 	 * @return Return managed entity
 	 */
-	public <T> List<T> persist(List<T> stateless) {
+	public <T extends Identity<?>> List<T> persist(List<T> stateless) {
 
 		if (stateless == null) {
 			throw new IllegalArgumentException("Transient object to be made persistent cannot be null");
@@ -205,7 +225,7 @@ public abstract class PersistencyKeeper {
 			int i = 0;
 			for (T s : stateless) {
 
-				if (s instanceof Identity && ((Identity<?>) s).getId() != null) {
+				if (s.getId() != null) {
 					throw new IllegalStateException("Stateless identity to be persist must not have ID set");
 				}
 
@@ -373,7 +393,7 @@ public abstract class PersistencyKeeper {
 	 * @param entity the detached or managed entity instance
 	 * @return Return managed entity
 	 */
-	public <T> T update(T entity) {
+	public <T extends Identity<?>> T update(T entity) {
 
 		if (entity == null) {
 			throw new IllegalArgumentException("Persistent object to be updated cannot be null");
@@ -385,10 +405,8 @@ public abstract class PersistencyKeeper {
 			throw new IllegalArgumentException(String.format("Class %s is not a database entity", clazz.getName()));
 		}
 
-		if (entity instanceof Identity) {
-			if (((Identity<?>) entity).getId() == null) {
-				throw new IllegalStateException("Persistent identity to be updated must have ID set");
-			}
+		if (entity.getId() == null) {
+			throw new IllegalStateException("Persistent identity to be updated must have ID set");
 		}
 
 		validate(entity);
@@ -405,6 +423,64 @@ public abstract class PersistencyKeeper {
 		t.commit();
 
 		return entity;
+	}
+
+	private static enum CommitType {
+		SAVE,
+		UPDATE,
+		MERGE,
+	}
+
+	public <T extends Identity<?>> Collection<T> merge(Collection<T> entities) {
+		return store(entities, CommitType.MERGE);
+	}
+
+	private <T extends Identity<?>> Collection<T> store(Collection<T> entities, CommitType type) {
+
+		if (entities.isEmpty()) {
+			return entities;
+		}
+
+		Class<?> clazz = null;
+
+		Session s = getSession();
+		Transaction t = s.beginTransaction();
+
+		try {
+
+			for (T entity : entities) {
+
+				if (!isEntity(clazz = entity.getClass())) {
+					throw new IllegalArgumentException(String.format("Class %s is not a database entity", clazz.getName()));
+				}
+
+				if (entity.getId() == null) {
+					throw new IllegalStateException("Persistent identity to be updated must have ID set");
+				}
+
+				validate(entity);
+
+				switch (type) {
+					case SAVE:
+						s.save(entity);
+						break;
+					case UPDATE:
+						s.update(entity);
+						break;
+					case MERGE:
+						s.merge(entity);
+						break;
+				}
+			}
+
+		} catch (HibernateException e) {
+			t.rollback();
+			throw new RuntimeException(e);
+		}
+
+		t.commit();
+
+		return entities;
 	}
 
 	/**
@@ -515,63 +591,6 @@ public abstract class PersistencyKeeper {
 	}
 
 	/**
-	 * Pull state of the persistent object and merge it into stateless one. This
-	 * operation will override all JSON-ignored fields value. Resultant object
-	 * is statefull but still detached. To merge statefull entity with the
-	 * database please use {@link #update(Object)}
-	 * 
-	 * @param stateless the stateless entity
-	 * @return Return stateful detached object
-	 * @deprecated Use hydration mechanism
-	 */
-	@Deprecated
-	public <T> T unignore(T stateless) {
-
-		if (stateless == null) {
-			throw new IllegalArgumentException("Stateless entity to be merged must not be null");
-		}
-
-		if (stateless instanceof Identity) {
-			if (((Identity<?>) stateless).getId() == null) {
-				throw new IllegalStateException("Stateful identity to be updated must have ID set");
-			}
-		} else {
-			throw new IllegalArgumentException("Stateless must be identity");
-		}
-
-		if (getSession().contains(stateless)) {
-			throw new IllegalStateException("Given object must not be managed!");
-		}
-
-		Class<?> clazz = stateless.getClass();
-		Serializable id = ((Identity<?>) stateless).getId();
-		Object entity = get(clazz, id);
-
-		getSession().evict(entity);
-
-		for (Field f : clazz.getDeclaredFields()) {
-
-			if (!f.isAccessible()) {
-				f.setAccessible(true);
-			}
-
-			Annotation ji = f.getAnnotation(JsonIgnore.class);
-
-			if (ji != null) {
-				try {
-					f.set(stateless, f.get(entity));
-				} catch (IllegalArgumentException e) {
-					throw new RuntimeException(e);
-				} catch (IllegalAccessException e) {
-					throw new RuntimeException(e);
-				}
-			}
-		}
-
-		return stateless;
-	}
-
-	/**
 	 * Delete given entity.
 	 * 
 	 * @param entity the entity to be removed
@@ -603,6 +622,38 @@ public abstract class PersistencyKeeper {
 		}
 
 		return evict(entity);
+	}
+
+	public <T extends Identity<?>> Collection<T> delete(Collection<T> entities) {
+
+		if (entities.isEmpty()) {
+			return entities;
+		}
+
+		Transaction t = session.beginTransaction();
+
+		try {
+			for (T entity : entities) {
+				session.delete(entity);
+			}
+		} catch (Exception e) {
+			t.rollback();
+			throw new RuntimeException(e);
+		}
+
+		t.commit();
+
+		// detached identities must have ID set to null - this is very helpful
+		// trick which bind entity with the state which can be resolved without
+		// using Hibernate (e.g. in upper presentation layers)
+
+		for (T entity : entities) {
+			entity.setId(null);
+			evict(entity);
+		}
+
+		return entities;
+
 	}
 
 	/**
@@ -678,7 +729,7 @@ public abstract class PersistencyKeeper {
 		dbf.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
 
 		DocumentBuilder builder = dbf.newDocumentBuilder();
-		Document doc = builder.parse(PersistencyKeeper.class.getResourceAsStream("/hibernate.cfg.xml"));
+		Document doc = builder.parse(PersistenceKeeper.class.getResourceAsStream("/hibernate.cfg.xml"));
 		XPathFactory xPathfactory = XPathFactory.newInstance();
 		XPath xpath = xPathfactory.newXPath();
 
@@ -719,7 +770,7 @@ public abstract class PersistencyKeeper {
 		dbf.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
 
 		DocumentBuilder builder = dbf.newDocumentBuilder();
-		Document doc = builder.parse(PersistencyKeeper.class.getResourceAsStream("/hibernate.cfg.xml"));
+		Document doc = builder.parse(PersistenceKeeper.class.getResourceAsStream("/hibernate.cfg.xml"));
 		XPathFactory xPathfactory = XPathFactory.newInstance();
 		XPath xpath = xPathfactory.newXPath();
 
@@ -739,7 +790,7 @@ public abstract class PersistencyKeeper {
 
 		for (String p : splitted) {
 			if (!(p = p.trim()).isEmpty()) {
-				daoClasses.addAll(new Reflections(p).getSubTypesOf(PersistencyKeeper.class));
+				daoClasses.addAll(new Reflections(p).getSubTypesOf(PersistenceKeeper.class));
 			}
 		}
 

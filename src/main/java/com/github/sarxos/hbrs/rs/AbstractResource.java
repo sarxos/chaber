@@ -189,5 +189,4 @@ public abstract class AbstractResource {
 	protected boolean isLocalInvocation() {
 		return "127.0.0.1".equals(request.getRemoteAddr()) || "localhost".equals(request.getRemoteHost());
 	}
-
 }
