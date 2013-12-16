@@ -143,17 +143,21 @@ public abstract class PersistenceKeeper implements Closeable {
 	/**
 	 * @return Return Hibernate session factory
 	 */
-	public static SessionFactory getSessionFactory() {
+	public static final SessionFactory getSessionFactory() {
 		if (factory == null) {
 			throw new IllegalStateException("Hibernate has not been initialized");
 		}
 		return factory;
 	}
 
+	public static int getBatchSize() {
+		return batchSize;
+	}
+
 	/**
 	 * Initialize. This will build session factory.
 	 */
-	public static void initialize() {
+	public static final void initialize() {
 		factory = buildSessionFactory();
 	}
 
@@ -482,6 +486,7 @@ public abstract class PersistenceKeeper implements Closeable {
 				// batch mode
 
 				if (s != getSession()) {
+
 					if (i++ > 0 && i % batchSize == 0) {
 						s.flush();
 						s.clear();

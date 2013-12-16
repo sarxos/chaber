@@ -52,7 +52,7 @@ public abstract class AbstractResource {
 	protected static Response forbidden(Object message) {
 		return Response
 			.status(Status.FORBIDDEN)
-			.entity(message)
+			.entity(toMessage("error", message))
 			.build();
 	}
 
@@ -63,15 +63,10 @@ public abstract class AbstractResource {
 	 * @return Unauthorized response (HTTP 401)
 	 */
 	protected static Response unauthorized(String message) {
-		try {
-			return Response
-				.status(Status.UNAUTHORIZED)
-				.entity(new ObjectMapper().writeValueAsString(message))
-				.build();
-		} catch (JsonProcessingException e) {
-			LOG.error(e.getMessage(), e);
-			throw new IllegalArgumentException("Unserializable content");
-		}
+		return Response
+			.status(Status.UNAUTHORIZED)
+			.entity(toMessage("error", message))
+			.build();
 	}
 
 	/**
@@ -81,15 +76,10 @@ public abstract class AbstractResource {
 	 * @return Bad request response (HTTP 400)
 	 */
 	protected static Response bad(String message) {
-		try {
-			return Response
-				.status(Status.BAD_REQUEST)
-				.entity(new ObjectMapper().writeValueAsString(message))
-				.build();
-		} catch (JsonProcessingException e) {
-			LOG.error(e.getMessage(), e);
-			throw new IllegalArgumentException("Unserializable content");
-		}
+		return Response
+			.status(Status.BAD_REQUEST)
+			.entity(toMessage("error", message))
+			.build();
 	}
 
 	/**
@@ -101,8 +91,14 @@ public abstract class AbstractResource {
 	protected static Response unauthorized() {
 		return Response
 			.status(Status.UNAUTHORIZED)
-			.entity("")
+			.entity(toMessage("error", "Unauthorized"))
 			.build();
+	}
+
+	private static Map<String, Object> toMessage(String key, Object message) {
+		Map<String, Object> r = new HashMap<String, Object>();
+		r.put(key, message);
+		return r;
 	}
 
 	protected static Response missing(String format, Object... args) {
@@ -117,15 +113,10 @@ public abstract class AbstractResource {
 	 * @return Missing response (HTTP 404)
 	 */
 	protected static Response missing(String message) {
-		try {
-			return Response
-				.status(Status.NOT_FOUND)
-				.entity(new ObjectMapper().writeValueAsString(message))
-				.build();
-		} catch (JsonProcessingException e) {
-			LOG.error(e.getMessage(), e);
-			throw new IllegalArgumentException("Unserializable content");
-		}
+		return Response
+			.status(Status.NOT_FOUND)
+			.entity(toMessage("error", message))
+			.build();
 	}
 
 	/**
@@ -152,10 +143,8 @@ public abstract class AbstractResource {
 	}
 
 	protected static Response removed(Serializable id) {
-
 		Map<String, Object> response = new HashMap<String, Object>();
 		response.put("removed", id);
-
 		return ok(response);
 	}
 
