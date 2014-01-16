@@ -15,6 +15,13 @@ import javax.persistence.Entity;
 import javax.persistence.ManyToMany;
 import javax.persistence.ManyToOne;
 import javax.persistence.OneToMany;
+import javax.persistence.PostLoad;
+import javax.persistence.PostPersist;
+import javax.persistence.PostRemove;
+import javax.persistence.PostUpdate;
+import javax.persistence.PrePersist;
+import javax.persistence.PreRemove;
+import javax.persistence.PreUpdate;
 import javax.validation.ConstraintViolation;
 import javax.validation.Validation;
 import javax.validation.Validator;
@@ -121,7 +128,8 @@ public abstract class PersistenceKeeper implements Closeable {
 	 */
 	private static SessionFactory buildSessionFactory() {
 
-		AnnotationConfiguration ac = new AnnotationConfiguration().configure();
+		AnnotationConfiguration ac = new AnnotationConfiguration()
+			.configure();
 
 		SessionFactory factory = null;
 		try {
@@ -197,32 +205,6 @@ public abstract class PersistenceKeeper implements Closeable {
 	 * @param stateless the transient entity to be persisted
 	 * @return Return managed entity
 	 */
-	public <T extends Identity<?>> T persist(T stateless) {
-
-		if (stateless == null) {
-			throw new IllegalArgumentException("Transient object to be made persistent cannot be null");
-		}
-
-		if (stateless.getId() != null) {
-			throw new IllegalStateException("Stateless identity to be persist must not have ID set");
-		}
-
-		validate(stateless);
-
-		session.beginTransaction();
-		session.save(stateless);
-		session.getTransaction().commit();
-
-		return stateless;
-	}
-
-	/**
-	 * Will persist stateless (transient) entity. This method will validate
-	 * entity against possible constraints violation.
-	 * 
-	 * @param stateless the transient entity to be persisted
-	 * @return Return managed entity
-	 */
 	public <T extends Identity<?>> Collection<T> persist(Collection<T> entities) {
 		return store(entities, CommitType.PERSIST);
 	}
@@ -248,21 +230,25 @@ public abstract class PersistenceKeeper implements Closeable {
 			throw new IllegalArgumentException("Database entity ID cannot be null");
 		}
 
-		return (T) session.get(clazz, id);
+		T entity = (T) session.get(clazz, id);
+
+		PersistenceHooks.hook(entity, PostLoad.class);
+
+		return entity;
 	}
 
 	@SuppressWarnings("unchecked")
 	public <T extends Identity<?>> T reget(T entity) {
 
-		if (entity instanceof Identity) {
-			if (((Identity<?>) entity).getId() == null) {
-				throw new IllegalStateException("Only persistent entities can be reget");
-			}
-		} else {
-			throw new IllegalArgumentException("Dry entity must be an identity");
+		if (entity.getId() == null) {
+			throw new IllegalStateException("Only persistent entities can be reget");
 		}
 
-		return (T) get(entity.getClass(), entity.getId());
+		entity = (T) get(entity.getClass(), entity.getId());
+
+		PersistenceHooks.hook(entity, PostLoad.class);
+
+		return entity;
 	}
 
 	public <T> T refresh(T entity) {
@@ -272,6 +258,8 @@ public abstract class PersistenceKeeper implements Closeable {
 		}
 
 		session.refresh(entity);
+
+		PersistenceHooks.hook(entity, PostLoad.class);
 
 		return entity;
 	}
@@ -286,7 +274,7 @@ public abstract class PersistenceKeeper implements Closeable {
 		}
 
 		return (Integer) session
-			.createQuery(String.format("select count(*) from %s", clazz.getSimpleName()))
+			.createQuery(String.format("select count(1) from %s", clazz.getSimpleName()))
 			.uniqueResult();
 	}
 
@@ -341,9 +329,15 @@ public abstract class PersistenceKeeper implements Closeable {
 			throw new IllegalArgumentException(String.format("Class %s is not a database entity", clazz.getName()));
 		}
 
-		return session
+		List<T> entities = session
 			.createQuery(String.format("from %s", clazz.getSimpleName()))
 			.list();
+
+		for (T entity : entities) {
+			PersistenceHooks.hook(entity, PostLoad.class);
+		}
+
+		return entities;
 	}
 
 	/**
@@ -370,11 +364,36 @@ public abstract class PersistenceKeeper implements Closeable {
 			throw new IllegalArgumentException("Max records count must be positive");
 		}
 
-		return session
+		List<T> entities = session
 			.createQuery(String.format("from %s", clazz.getSimpleName()))
 			.setFirstResult(pgNum * pgSize)
 			.setMaxResults(pgSize)
 			.list();
+
+		for (T entity : entities) {
+			PersistenceHooks.hook(entity, PostLoad.class);
+		}
+
+		return entities;
+	}
+
+	/**
+	 * Will persist stateless (transient) entity. This method will validate
+	 * entity against possible constraints violation.
+	 * 
+	 * @param stateless the transient entity to be persisted
+	 * @return Return managed entity
+	 */
+	public <T extends Identity<?>> T persist(T stateless) {
+		return store(stateless, CommitType.PERSIST);
+	}
+
+	public <T extends Identity<?>> T merge(T entity) {
+		return store(entity, CommitType.MERGE);
+	}
+
+	public <T extends Identity<?>> T save(T entity) {
+		return store(entity, CommitType.SAVE);
 	}
 
 	/**
@@ -385,9 +404,17 @@ public abstract class PersistenceKeeper implements Closeable {
 	 * @return Return managed entity
 	 */
 	public <T extends Identity<?>> T update(T entity) {
+		return store(entity, CommitType.UPDATE);
+	}
+
+	@SuppressWarnings("unchecked")
+	private <T extends Identity<?>> T store(T entity, CommitType type) {
 
 		if (entity == null) {
 			throw new IllegalArgumentException("Persistent object to be updated cannot be null");
+		}
+		if (type == null) {
+			throw new IllegalArgumentException("Commit type cannot be null");
 		}
 
 		Class<?> clazz = entity.getClass();
@@ -396,22 +423,70 @@ public abstract class PersistenceKeeper implements Closeable {
 			throw new IllegalArgumentException(String.format("Class %s is not a database entity", clazz.getName()));
 		}
 
-		if (entity.getId() == null) {
-			throw new IllegalStateException("Persistent identity to be updated must have ID set");
+		switch (type) {
+			case UPDATE:
+			case MERGE:
+				if (entity.getId() == null) {
+					throw new IllegalStateException("Persistent identity to be updated must have ID set");
+				}
+				break;
+			case PERSIST:
+			case SAVE:
+				if (entity.getId() != null) {
+					throw new IllegalStateException("Stateless identity to be persist must not have ID set");
+				}
+				break;
 		}
+
+		// bean valiation
 
 		validate(entity);
 
-		Transaction t = session.beginTransaction();
+		// hooks
 
-		try {
-			session.update(entity);
-		} catch (HibernateException e) {
-			t.rollback();
-			throw new RuntimeException(e);
+		if (type == CommitType.PERSIST) {
+			PersistenceHooks.hook(entity, PrePersist.class);
+		} else {
+			PersistenceHooks.hook(entity, PreUpdate.class);
 		}
 
-		t.commit();
+		Transaction t = session.beginTransaction();
+
+		boolean error = false;
+		try {
+			switch (type) {
+				case UPDATE:
+					session.update(entity);
+					break;
+				case MERGE:
+					entity = (T) session.merge(entity);
+					break;
+				case PERSIST:
+					session.persist(entity);
+					break;
+				case SAVE:
+					session.save(entity);
+					break;
+				default:
+					throw new RuntimeException("Not supported, yet");
+			}
+		} catch (HibernateException e) {
+			error = true;
+			throw e;
+		} finally {
+
+			if (error) {
+				t.rollback();
+			} else {
+				t.commit();
+			}
+
+			if (type == CommitType.PERSIST) {
+				PersistenceHooks.hook(entity, PostPersist.class);
+			} else {
+				PersistenceHooks.hook(entity, PostUpdate.class);
+			}
+		}
 
 		return entity;
 	}
@@ -431,8 +506,37 @@ public abstract class PersistenceKeeper implements Closeable {
 		}
 
 		Class<?> clazz = null;
-
 		Session s = null;
+
+		for (T entity : entities) {
+
+			// TODO: move to mapping
+
+			if (!isEntity(clazz = entity.getClass())) {
+				throw new IllegalArgumentException(String.format("Class %s is not a database entity", clazz.getName()));
+			}
+
+			// for update commits we have to verify if ID is set
+
+			switch (type) {
+				case UPDATE:
+				case MERGE:
+					if (entity.getId() == null) {
+						throw new IllegalStateException("Persistent identity to be stored must have ID set");
+					}
+					break;
+				default:
+					break;
+			}
+
+			validate(entity);
+
+			if (type == CommitType.PERSIST) {
+				PersistenceHooks.hook(entity, PrePersist.class);
+			} else {
+				PersistenceHooks.hook(entity, PreUpdate.class);
+			}
+		}
 
 		if (entities.size() >= batchSize) {
 			s = factory.openSession();
@@ -446,27 +550,6 @@ public abstract class PersistenceKeeper implements Closeable {
 
 			int i = 0;
 			for (T entity : entities) {
-
-				// TODO: move to mapping
-
-				if (!isEntity(clazz = entity.getClass())) {
-					throw new IllegalArgumentException(String.format("Class %s is not a database entity", clazz.getName()));
-				}
-
-				// for update commits we have to verify if ID is set
-
-				switch (type) {
-					case UPDATE:
-					case MERGE:
-						if (entity.getId() == null) {
-							throw new IllegalStateException("Persistent identity to be stored must have ID set");
-						}
-						break;
-					default:
-						break;
-				}
-
-				validate(entity);
 
 				switch (type) {
 					case PERSIST:
@@ -507,6 +590,14 @@ public abstract class PersistenceKeeper implements Closeable {
 				s.flush();
 				s.clear();
 				s.close();
+			}
+
+			for (T entity : entities) {
+				if (type == CommitType.PERSIST) {
+					PersistenceHooks.hook(entity, PostPersist.class);
+				} else {
+					PersistenceHooks.hook(entity, PostUpdate.class);
+				}
 			}
 		}
 
@@ -632,6 +723,8 @@ public abstract class PersistenceKeeper implements Closeable {
 			throw new IllegalArgumentException("Persistent object to be deleted cannot be null");
 		}
 
+		PersistenceHooks.hook(entity, PreRemove.class);
+
 		Transaction t = session.beginTransaction();
 
 		try {
@@ -642,6 +735,8 @@ public abstract class PersistenceKeeper implements Closeable {
 		}
 
 		t.commit();
+
+		PersistenceHooks.hook(entity, PostRemove.class);
 
 		// detached identities must have ID set to null - this is very helpful
 		// trick which bind entity with the state which can be resolved without
@@ -660,6 +755,10 @@ public abstract class PersistenceKeeper implements Closeable {
 			return entities;
 		}
 
+		for (T entity : entities) {
+			PersistenceHooks.hook(entity, PreRemove.class);
+		}
+
 		Transaction t = session.beginTransaction();
 
 		try {
@@ -672,6 +771,10 @@ public abstract class PersistenceKeeper implements Closeable {
 		}
 
 		t.commit();
+
+		for (T entity : entities) {
+			PersistenceHooks.hook(entity, PostRemove.class);
+		}
 
 		// detached identities must have ID set to null - this is very helpful
 		// trick which bind entity with the state which can be resolved without
@@ -898,6 +1001,10 @@ public abstract class PersistenceKeeper implements Closeable {
 			throw new IllegalArgumentException(String.format("Class %s is not an identity", clazz.getName()));
 		}
 
-		return (T) getSession().load(clazz, id);
+		T entity = (T) getSession().load(clazz, id);
+
+		PersistenceHooks.hook(entity, PostLoad.class);
+
+		return entity;
 	}
 }

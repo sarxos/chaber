@@ -16,7 +16,7 @@ import org.eclipse.jetty.server.HttpConnectionFactory;
 import org.eclipse.jetty.server.SecureRequestCustomizer;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
-import org.eclipse.jetty.server.SslConnectionFactory;
+import org.eclipse.jetty.server.nio.NetworkTrafficSelectChannelConnector;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.eclipse.jetty.webapp.WebAppContext;
 import org.slf4j.Logger;
@@ -216,6 +216,11 @@ public class RestServer implements Runnable {
 	@Override
 	public void run() {
 
+		int poolSize = Runtime.getRuntime().availableProcessors() - 1;
+		if (poolSize < 1) {
+			poolSize = 1;
+		}
+
 		Server server = new Server();
 
 		HttpConfiguration http_config = new HttpConfiguration();
@@ -225,12 +230,15 @@ public class RestServer implements Runnable {
 		http_config.setSendServerVersion(false);
 		http_config.setSendXPoweredBy(false);
 
-		ServerConnector http = new ServerConnector(server, new HttpConnectionFactory(http_config));
+		ServerConnector http = new NetworkTrafficSelectChannelConnector(server, new HttpConnectionFactory(http_config));
 		http.setPort(8081);
-		http.setIdleTimeout(30000);
+		http.setIdleTimeout(3000);
+		http.setAcceptQueueSize(poolSize);
+
+		String keystorePath = System.getProperty("jetty.keystore", "src/main/resources/keystore.jks");
 
 		SslContextFactory sslContextFactory = new SslContextFactory();
-		sslContextFactory.setKeyStorePath("src/main/resources/keystore.jks");
+		sslContextFactory.setKeyStorePath(keystorePath);
 		sslContextFactory.setKeyStorePassword("OBF:1qpb1u2a1xmq1wu01v8s1lz31v9u1wue1xmk1u301qq7");
 		sslContextFactory.setKeyManagerPassword("OBF:1qpb1u2a1xmq1wu01v8s1lz31v9u1wue1xmk1u301qq7");
 		sslContextFactory.setCertAlias("jetty");
@@ -238,9 +246,10 @@ public class RestServer implements Runnable {
 		HttpConfiguration https_config = new HttpConfiguration(http_config);
 		https_config.addCustomizer(new SecureRequestCustomizer());
 
-		ServerConnector https = new ServerConnector(server, new SslConnectionFactory(sslContextFactory, "http/1.1"), new HttpConnectionFactory(https_config));
+		ServerConnector https = new NetworkTrafficSelectChannelConnector(server, new HttpConnectionFactory(https_config), sslContextFactory);
 		https.setPort(8443);
-		https.setIdleTimeout(500000);
+		https.setIdleTimeout(3000);
+		https.setAcceptQueueSize(poolSize);
 
 		server.setConnectors(new Connector[] { http, https });
 
