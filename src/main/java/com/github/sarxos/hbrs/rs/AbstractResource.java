@@ -119,6 +119,12 @@ public abstract class AbstractResource {
 			.build();
 	}
 
+	protected static Response ok() {
+		return Response
+			.status(Status.OK)
+			.build();
+	}
+
 	/**
 	 * Response saying that everything is OK.
 	 * 

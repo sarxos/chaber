@@ -95,12 +95,11 @@ public abstract class PersistenceKeeper implements Closeable {
 	/**
 	 * Hibernate session.
 	 */
-	private final Session session;
+	private Session sessions;
 
 	private StatelessSession statelessSession;
 
 	public PersistenceKeeper() {
-		session = getSessionFactory().openSession();
 	}
 
 	/**
@@ -112,8 +111,10 @@ public abstract class PersistenceKeeper implements Closeable {
 
 		LOG.debug("Closing persistence keeper");
 
-		session.flush();
-		session.close();
+		if (sessions != null && sessions.isOpen()) {
+			sessions.flush();
+			sessions.close();
+		}
 
 		if (statelessSession != null) {
 			statelessSession.close();
@@ -179,8 +180,12 @@ public abstract class PersistenceKeeper implements Closeable {
 	/**
 	 * @return Return current Hibernate session
 	 */
-	public Session getSession() {
-		return session;
+	public Session session() {
+		if (sessions == null) {
+			return sessions = getSessionFactory().openSession();
+		} else {
+			return sessions;
+		}
 	}
 
 	public StatelessSession getStatelessSession() {
@@ -230,7 +235,7 @@ public abstract class PersistenceKeeper implements Closeable {
 			throw new IllegalArgumentException("Database entity ID cannot be null");
 		}
 
-		T entity = (T) session.get(clazz, id);
+		T entity = (T) session().get(clazz, id);
 
 		PersistenceHooks.hook(entity, PostLoad.class);
 
@@ -257,7 +262,7 @@ public abstract class PersistenceKeeper implements Closeable {
 			throw new IllegalArgumentException("Database entity cannot be null");
 		}
 
-		session.refresh(entity);
+		session().refresh(entity);
 
 		PersistenceHooks.hook(entity, PostLoad.class);
 
@@ -273,9 +278,11 @@ public abstract class PersistenceKeeper implements Closeable {
 			throw new IllegalArgumentException(String.format("Class %s is not a database entity", clazz.getName()));
 		}
 
-		return (Integer) session
+		long count = (Long) session()
 			.createQuery(String.format("select count(1) from %s", clazz.getSimpleName()))
 			.uniqueResult();
+
+		return (int) count;
 	}
 
 	/**
@@ -303,9 +310,11 @@ public abstract class PersistenceKeeper implements Closeable {
 		String idn = cm.getIdentifierPropertyName();
 		String csn = clazz.getSimpleName();
 
-		long count = (Long) session
-			.createQuery(String.format("select count(*) from %s e where e.%s = :id", csn, idn))
+		long count = (Long) session()
+			.createQuery(String.format("select count(1) from %s e where e.%s = :id", csn, idn))
 			.setSerializable("id", id)
+			.setMaxResults(1)
+			.setCacheable(false)
 			.uniqueResult();
 
 		return count > 0;
@@ -329,8 +338,9 @@ public abstract class PersistenceKeeper implements Closeable {
 			throw new IllegalArgumentException(String.format("Class %s is not a database entity", clazz.getName()));
 		}
 
-		List<T> entities = session
+		List<T> entities = session()
 			.createQuery(String.format("from %s", clazz.getSimpleName()))
+			.setCacheable(false)
 			.list();
 
 		for (T entity : entities) {
@@ -364,10 +374,11 @@ public abstract class PersistenceKeeper implements Closeable {
 			throw new IllegalArgumentException("Max records count must be positive");
 		}
 
-		List<T> entities = session
+		List<T> entities = session()
 			.createQuery(String.format("from %s", clazz.getSimpleName()))
 			.setFirstResult(pgNum * pgSize)
 			.setMaxResults(pgSize)
+			.setCacheable(false)
 			.list();
 
 		for (T entity : entities) {
@@ -438,7 +449,7 @@ public abstract class PersistenceKeeper implements Closeable {
 				break;
 		}
 
-		// bean valiation
+		// bean validation
 
 		validate(entity);
 
@@ -450,42 +461,46 @@ public abstract class PersistenceKeeper implements Closeable {
 			PersistenceHooks.hook(entity, PreUpdate.class);
 		}
 
-		Transaction t = session.beginTransaction();
+		Session s = session();
+		Transaction t = s.beginTransaction();
+		HibernateException he = null;
 
-		boolean error = false;
 		try {
 			switch (type) {
 				case UPDATE:
-					session.update(entity);
+					s.update(entity);
 					break;
 				case MERGE:
-					entity = (T) session.merge(entity);
+					entity = (T) s.merge(entity);
 					break;
 				case PERSIST:
-					session.persist(entity);
+					s.persist(entity);
 					break;
 				case SAVE:
-					session.save(entity);
+					s.save(entity);
 					break;
 				default:
 					throw new RuntimeException("Not supported, yet");
 			}
+
+			t.commit();
+
 		} catch (HibernateException e) {
-			error = true;
-			throw e;
+			throw he = e;
 		} finally {
-
-			if (error) {
-				t.rollback();
-			} else {
-				t.commit();
+			if (he != null) {
+				try {
+					t.rollback();
+				} catch (Exception e) {
+					LOG.error("Cannot rollback", e);
+				}
 			}
+		}
 
-			if (type == CommitType.PERSIST) {
-				PersistenceHooks.hook(entity, PostPersist.class);
-			} else {
-				PersistenceHooks.hook(entity, PostUpdate.class);
-			}
+		if (type == CommitType.PERSIST) {
+			PersistenceHooks.hook(entity, PostPersist.class);
+		} else {
+			PersistenceHooks.hook(entity, PostUpdate.class);
 		}
 
 		return entity;
@@ -541,10 +556,11 @@ public abstract class PersistenceKeeper implements Closeable {
 		if (entities.size() >= batchSize) {
 			s = factory.openSession();
 		} else {
-			s = getSession();
+			s = session();
 		}
 
 		Transaction t = s.beginTransaction();
+		HibernateException he = null;
 
 		try {
 
@@ -568,8 +584,7 @@ public abstract class PersistenceKeeper implements Closeable {
 
 				// batch mode
 
-				if (s != getSession()) {
-
+				if (s != session()) {
 					if (i++ > 0 && i % batchSize == 0) {
 						s.flush();
 						s.clear();
@@ -580,24 +595,35 @@ public abstract class PersistenceKeeper implements Closeable {
 			t.commit();
 
 		} catch (HibernateException e) {
-			t.rollback();
-			throw new RuntimeException(e);
+			throw he = e;
 		} finally {
+
+			if (he != null) {
+				try {
+					t.rollback();
+				} catch (Exception e) {
+					LOG.error("Cannot rollback", e);
+				}
+			}
 
 			// in case of batch mode
 
-			if (s != getSession()) {
-				s.flush();
+			if (s != session()) {
+
+				if (he == null) {
+					s.flush();
+				}
+
 				s.clear();
 				s.close();
 			}
+		}
 
-			for (T entity : entities) {
-				if (type == CommitType.PERSIST) {
-					PersistenceHooks.hook(entity, PostPersist.class);
-				} else {
-					PersistenceHooks.hook(entity, PostUpdate.class);
-				}
+		for (T entity : entities) {
+			if (type == CommitType.PERSIST) {
+				PersistenceHooks.hook(entity, PostPersist.class);
+			} else {
+				PersistenceHooks.hook(entity, PostUpdate.class);
 			}
 		}
 
@@ -725,16 +751,24 @@ public abstract class PersistenceKeeper implements Closeable {
 
 		PersistenceHooks.hook(entity, PreRemove.class);
 
-		Transaction t = session.beginTransaction();
+		Session s = session();
+		Transaction t = s.beginTransaction();
+		HibernateException he = null;
 
 		try {
-			session.delete(entity);
-		} catch (Exception e) {
-			t.rollback();
-			throw new RuntimeException(e);
+			s.delete(entity);
+			t.commit();
+		} catch (HibernateException e) {
+			throw he = e;
+		} finally {
+			if (he != null) {
+				try {
+					t.rollback();
+				} catch (Exception e) {
+					LOG.error("Cannot rollback", e);
+				}
+			}
 		}
-
-		t.commit();
 
 		PersistenceHooks.hook(entity, PostRemove.class);
 
@@ -759,18 +793,26 @@ public abstract class PersistenceKeeper implements Closeable {
 			PersistenceHooks.hook(entity, PreRemove.class);
 		}
 
-		Transaction t = session.beginTransaction();
+		Session s = session();
+		Transaction t = s.beginTransaction();
+		HibernateException he = null;
 
 		try {
 			for (T entity : entities) {
-				session.delete(entity);
+				s.delete(entity);
 			}
-		} catch (Exception e) {
-			t.rollback();
-			throw new RuntimeException(e);
+			t.commit();
+		} catch (HibernateException e) {
+			throw he = e;
+		} finally {
+			if (he != null) {
+				try {
+					t.rollback();
+				} catch (Exception e) {
+					LOG.error("Cannot rollback", e);
+				}
+			}
 		}
-
-		t.commit();
 
 		for (T entity : entities) {
 			PersistenceHooks.hook(entity, PostRemove.class);
@@ -810,28 +852,36 @@ public abstract class PersistenceKeeper implements Closeable {
 		String idn = cm.getIdentifierPropertyName();
 		String csn = clazz.getSimpleName();
 
-		Query q = session
+		Session s = session();
+		Query q = s
 			.createQuery(String.format("delete from %s e where e.%s = :id", csn, idn))
-			.setSerializable("id", id);
+			.setSerializable("id", id)
+			.setCacheable(false);
+
+		HibernateException he = null;
+		Transaction t = s.beginTransaction();
 
 		int count = -1;
-
-		Transaction t = session.beginTransaction();
-
 		try {
 			count = q.executeUpdate();
-		} catch (Exception e) {
-			t.rollback();
-			throw new RuntimeException(e);
+			t.commit();
+		} catch (HibernateException e) {
+			throw he = e;
+		} finally {
+			if (he != null) {
+				try {
+					t.rollback();
+				} catch (Exception e) {
+					LOG.error("Cannot rollback", e);
+				}
+			}
 		}
-
-		t.commit();
 
 		return count > 0;
 	}
 
 	public <T> T evict(T entity) {
-		session.evict(entity);
+		session().evict(entity);
 		return entity;
 	}
 
@@ -1001,7 +1051,7 @@ public abstract class PersistenceKeeper implements Closeable {
 			throw new IllegalArgumentException(String.format("Class %s is not an identity", clazz.getName()));
 		}
 
-		T entity = (T) getSession().load(clazz, id);
+		T entity = (T) session().load(clazz, id);
 
 		PersistenceHooks.hook(entity, PostLoad.class);
 

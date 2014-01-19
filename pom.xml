@@ -10,7 +10,7 @@
 
 	<groupId>com.github.sarxos</groupId>
 	<artifactId>chaber</artifactId>
-	<version>1.4.2</version>
+	<version>1.4.3</version>
 
 	<name>Chaber</name>
 
@@ -151,6 +151,16 @@
 				</exclusion>
 			</exclusions>
 		</dependency>
+		<dependency>
+			<groupId>javax.el</groupId>
+			<artifactId>el-api</artifactId>
+			<version>2.2</version>
+		</dependency>
+		<dependency>
+			<groupId>org.glassfish.web</groupId>
+			<artifactId>el-impl</artifactId>
+			<version>2.2</version>
+		</dependency>		
 		<!-- Utilities -->
 		<dependency>
 			<groupId>org.reflections</groupId>

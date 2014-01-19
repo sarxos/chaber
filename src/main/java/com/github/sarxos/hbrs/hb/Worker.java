@@ -4,6 +4,7 @@ import java.util.Collection;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.hibernate.HibernateException;
 import org.hibernate.Session;
 import org.hibernate.Transaction;
 import org.slf4j.Logger;
@@ -22,10 +23,12 @@ public abstract class Worker<T> implements Runnable {
 		}
 	}
 
-	private final LinkedBlockingQueue<T> items = new LinkedBlockingQueue<T>();
+	private final LinkedBlockingQueue<T> items;
 
+	private final String name;
 	private final Runner runner;
 	private final boolean stateless;
+	private final int capacity;
 
 	private AtomicBoolean running = new AtomicBoolean(false);
 
@@ -37,14 +40,23 @@ public abstract class Worker<T> implements Runnable {
 		this(name, start, false);
 	}
 
+	public Worker(String name, boolean start, boolean stateless) {
+		this(name, 0, start, stateless);
+	}
+
 	/**
 	 * @param name the worker name
 	 * @param start shall worker start immediately
 	 * @param stateless is worker stateless (does not create Hibernate session)
 	 */
-	public Worker(String name, boolean start, boolean stateless) {
+	public Worker(String name, int capacity, boolean start, boolean stateless) {
+
+		this.name = name;
 		this.runner = new Runner(this, name);
 		this.stateless = stateless;
+		this.capacity = capacity;
+		this.items = new LinkedBlockingQueue<T>(capacity > 0 ? capacity : Integer.MAX_VALUE);
+
 		if (start) {
 			start();
 		}
@@ -76,6 +88,27 @@ public abstract class Worker<T> implements Runnable {
 
 		if (!isRunning()) {
 			throw new RuntimeException("Worker is not running");
+		}
+
+		int size = items.size();
+
+		if (size > capacity * 0.95) {
+
+			int drain = (int) (capacity * 0.25);
+
+			LOG.error("Worker {} capacity problem detected!", name);
+			LOG.error("Worker queue is almost completely excited ({}/{}), draining {} items", size, capacity, drain);
+
+			for (int i = 0; i < drain; i++) {
+				if (items.isEmpty()) {
+					break;
+				}
+				try {
+					items.take();
+				} catch (InterruptedException e) {
+					throw new RuntimeException(e);
+				}
+			}
 		}
 
 		try {
@@ -136,18 +169,28 @@ public abstract class Worker<T> implements Runnable {
 
 			try {
 				work(s, m);
+			} catch (HibernateException e) {
+
+				LOG.error("Hibernate error", e);
+
+				if (!stateless) {
+					try {
+						t.rollback();
+						s.clear();
+						s.close();
+					} catch (Exception e2) {
+						LOG.error("Cannot rollback", e2);
+					}
+				}
+
 			} catch (Exception e) {
 				LOG.error(e.getMessage(), e);
 			}
 
 			if (!stateless) {
-
 				if (c > 0 && c++ % bs == 0) {
 					s.flush();
 					s.clear();
-				}
-
-				if (c > 0 && c++ % bs * 10 == 0) {
 					t.commit();
 					t = s.beginTransaction();
 				}
