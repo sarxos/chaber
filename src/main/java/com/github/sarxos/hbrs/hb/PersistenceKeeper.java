@@ -68,6 +68,8 @@ public abstract class PersistenceKeeper implements Closeable {
 
 		UPDATE,
 
+		SAVE_OR_UPDATE,
+
 		MERGE,
 
 		PERSIST,
@@ -407,6 +409,10 @@ public abstract class PersistenceKeeper implements Closeable {
 		return store(entity, CommitType.SAVE);
 	}
 
+	public <T extends Identity<?>> T saveOrUpdate(T entity) {
+		return store(entity, CommitType.SAVE_OR_UPDATE);
+	}
+
 	/**
 	 * Merge state of the detached instance into the corresponding managed
 	 * instance in the database.
@@ -438,14 +444,16 @@ public abstract class PersistenceKeeper implements Closeable {
 			case UPDATE:
 			case MERGE:
 				if (entity.getId() == null) {
-					throw new IllegalStateException("Persistent identity to be updated must have ID set");
+					throw new IllegalStateException("Persistent identity to be updated/merged must have ID set");
 				}
 				break;
 			case PERSIST:
-			case SAVE:
 				if (entity.getId() != null) {
 					throw new IllegalStateException("Stateless identity to be persist must not have ID set");
 				}
+				break;
+			case SAVE:
+			case SAVE_OR_UPDATE:
 				break;
 		}
 
@@ -478,6 +486,9 @@ public abstract class PersistenceKeeper implements Closeable {
 					break;
 				case SAVE:
 					s.save(entity);
+					break;
+				case SAVE_OR_UPDATE:
+					s.saveOrUpdate(entity);
 					break;
 				default:
 					throw new RuntimeException("Not supported, yet");
@@ -579,6 +590,9 @@ public abstract class PersistenceKeeper implements Closeable {
 						break;
 					case MERGE:
 						s.merge(entity);
+						break;
+					case SAVE_OR_UPDATE:
+						s.saveOrUpdate(entity);
 						break;
 				}
 
