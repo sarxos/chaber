@@ -1057,4 +1057,12 @@ public abstract class PersistenceKeeper implements Closeable {
 
 		return entity;
 	}
+
+	public static final Collection<Serializable> identities(Collection<? extends Identity<? extends Serializable>> identities) {
+		List<Serializable> ids = new ArrayList<Serializable>();
+		for (Identity<? extends Serializable> identity : identities) {
+			ids.add(identity.getId());
+		}
+		return ids;
+	}
 }

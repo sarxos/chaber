@@ -226,13 +226,13 @@ public class RestServer implements Runnable {
 		HttpConfiguration http_config = new HttpConfiguration();
 		http_config.setSecureScheme("https");
 		http_config.setSecurePort(8443);
-		http_config.setOutputBufferSize(32768);
+		http_config.setOutputBufferSize(1024 * 100); // 100 kB
 		http_config.setSendServerVersion(false);
 		http_config.setSendXPoweredBy(false);
 
 		ServerConnector http = new NetworkTrafficSelectChannelConnector(server, new HttpConnectionFactory(http_config));
 		http.setPort(8081);
-		http.setIdleTimeout(3000);
+		http.setIdleTimeout(60000);
 		http.setAcceptQueueSize(poolSize);
 
 		String keystorePath = System.getProperty("jetty.keystore", "src/main/resources/keystore.jks");
