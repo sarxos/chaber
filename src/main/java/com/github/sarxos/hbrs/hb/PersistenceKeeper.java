@@ -220,6 +220,10 @@ public abstract class PersistenceKeeper implements Closeable {
 		return store(entities, CommitType.SAVE);
 	}
 
+	public <T extends Identity<?>> Collection<T> saveOrUpdate(Collection<T> entities) {
+		return store(entities, CommitType.SAVE_OR_UPDATE);
+	}
+
 	/**
 	 * Fetch entity from the database and return managed instance.
 	 * 
@@ -557,10 +561,19 @@ public abstract class PersistenceKeeper implements Closeable {
 
 			validate(entity);
 
-			if (type == CommitType.PERSIST) {
-				PersistenceHooks.hook(entity, PrePersist.class);
-			} else {
-				PersistenceHooks.hook(entity, PreUpdate.class);
+			switch (type) {
+				case PERSIST:
+				case SAVE:
+					PersistenceHooks.hook(entity, PrePersist.class);
+					break;
+				case UPDATE:
+				case MERGE:
+					PersistenceHooks.hook(entity, PreUpdate.class);
+					break;
+				case SAVE_OR_UPDATE:
+					PersistenceHooks.hook(entity, PrePersist.class);
+					PersistenceHooks.hook(entity, PreUpdate.class);
+					break;
 			}
 		}
 
