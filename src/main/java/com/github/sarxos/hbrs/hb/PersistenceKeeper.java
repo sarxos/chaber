@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.persistence.Column;
 import javax.persistence.Entity;
@@ -104,6 +105,8 @@ public abstract class PersistenceKeeper implements Closeable {
 	public PersistenceKeeper() {
 	}
 
+	private AtomicBoolean closed = new AtomicBoolean();
+
 	/**
 	 * Dispose keeper. This will flush and destroy Hibernate session. Please
 	 * note that L1 Hibernate cache will not be affected by this operation.
@@ -111,15 +114,18 @@ public abstract class PersistenceKeeper implements Closeable {
 	@Override
 	public void close() {
 
-		LOG.debug("Closing persistence keeper");
+		if (closed.compareAndSet(false, true)) {
 
-		if (sessions != null && sessions.isOpen()) {
-			sessions.flush();
-			sessions.close();
-		}
+			LOG.debug("Closing persistence keeper");
 
-		if (statelessSession != null) {
-			statelessSession.close();
+			if (sessions != null && sessions.isOpen()) {
+				sessions.flush();
+				sessions.close();
+			}
+
+			if (statelessSession != null) {
+				statelessSession.close();
+			}
 		}
 	}
 
@@ -183,6 +189,9 @@ public abstract class PersistenceKeeper implements Closeable {
 	 * @return Return current Hibernate session
 	 */
 	public Session session() {
+		if (closed.get()) {
+			throw new IllegalStateException("Keeper has been already closed");
+		}
 		if (sessions == null) {
 			return sessions = getSessionFactory().openSession();
 		} else {
@@ -190,7 +199,10 @@ public abstract class PersistenceKeeper implements Closeable {
 		}
 	}
 
-	public StatelessSession getStatelessSession() {
+	public StatelessSession stateless() {
+		if (closed.get()) {
+			throw new IllegalStateException("Keeper has been already closed");
+		}
 		if (statelessSession == null) {
 			statelessSession = getSessionFactory().openStatelessSession();
 		}

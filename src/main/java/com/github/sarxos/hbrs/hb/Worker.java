@@ -92,7 +92,7 @@ public abstract class Worker<T> implements Runnable {
 
 		int size = items.size();
 
-		if (size > capacity * 0.95) {
+		if (capacity > 0 && size > capacity * 0.95) {
 
 			int drain = (int) (capacity * 0.25);
 
@@ -138,13 +138,24 @@ public abstract class Worker<T> implements Runnable {
 				if (!stateless) {
 
 					if (t != null && t.isActive()) {
-						t.commit();
+						try {
+							t.commit();
+						} catch (HibernateException e) {
+							t.rollback();
+							LOG.error(e.getMessage(), e);
+						}
 					}
 
 					if (s != null && s.isOpen()) {
-						s.flush();
-						s.clear();
-						s.close();
+						try {
+							s.flush();
+							s.clear();
+						} catch (HibernateException e) {
+							s.clear();
+							LOG.error(e.getMessage(), e);
+						} finally {
+							s.close();
+						}
 					}
 
 					c = 0;
@@ -176,10 +187,11 @@ public abstract class Worker<T> implements Runnable {
 				if (!stateless) {
 					try {
 						t.rollback();
-						s.clear();
-						s.close();
 					} catch (Exception e2) {
 						LOG.error("Cannot rollback", e2);
+					} finally {
+						s.clear();
+						s.close();
 					}
 				}
 
@@ -189,9 +201,22 @@ public abstract class Worker<T> implements Runnable {
 
 			if (!stateless) {
 				if (c > 0 && c++ % bs == 0) {
-					s.flush();
-					s.clear();
-					t.commit();
+
+					try {
+						t.commit();
+					} catch (HibernateException e) {
+						t.rollback();
+						LOG.error(e.getMessage(), e);
+					}
+
+					try {
+						s.flush();
+					} catch (HibernateException e) {
+						LOG.error(e.getMessage(), e);
+					} finally {
+						s.clear();
+					}
+
 					t = s.beginTransaction();
 				}
 			}
