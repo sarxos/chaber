@@ -28,20 +28,12 @@ public abstract class AbstractExceptionMapper<T extends Throwable> implements Ex
 			throw new IllegalArgumentException("Exception cannot be null");
 		}
 
-		Throwable b = null;
-		Throwable t = exception;
-		do {
-			b = t;
-			t = t.getCause();
-		} while (t != null);
-
 		Map<String, String> r = new HashMap<String, String>();
-		r.put("exception", b.getClass().getName());
-		r.put("message", b.getMessage());
+		r.put("exception", exception.getClass().getName());
+		r.put("message", exception.getMessage());
 
 		return Response
 			.status(status)
-			.type(MediaType.APPLICATION_JSON)
 			.entity(r)
 			.build();
 	}
