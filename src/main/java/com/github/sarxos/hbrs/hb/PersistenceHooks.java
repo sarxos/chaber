@@ -50,7 +50,7 @@ public class PersistenceHooks extends EmptyInterceptor {
 	public static final void hook(Object entity, Class<? extends Annotation> a) {
 
 		if (entity == null) {
-			LOG.error("Null entity passed to invoke hooks");
+			LOG.debug("Null entity passed to invoke hooks");
 			return;
 		}
 
