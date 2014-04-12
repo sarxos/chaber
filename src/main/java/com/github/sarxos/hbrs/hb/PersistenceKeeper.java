@@ -182,7 +182,9 @@ public abstract class PersistenceKeeper implements Closeable {
 	 * Shutdown persistence keeper. This operation will close session factory.
 	 */
 	public static void shutdown() {
-		getSessionFactory().close();
+		if (factory != null) {
+			factory.close();
+		}
 	}
 
 	/**
@@ -199,6 +201,9 @@ public abstract class PersistenceKeeper implements Closeable {
 		}
 	}
 
+	/**
+	 * @return Stateless session
+	 */
 	public StatelessSession stateless() {
 		if (closed.get()) {
 			throw new IllegalStateException("Keeper has been already closed");
