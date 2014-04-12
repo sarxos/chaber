@@ -49,7 +49,7 @@ public abstract class AbstractResource {
 	 * 
 	 * @return Forbidden response (HTTP 403)
 	 */
-	protected static Response forbidden(Object message) {
+	public static Response forbidden(Object message) {
 		return Response
 			.status(Status.FORBIDDEN)
 			.entity(toMessage("error", message))
@@ -62,7 +62,7 @@ public abstract class AbstractResource {
 	 * 
 	 * @return Unauthorized response (HTTP 401)
 	 */
-	protected static Response unauthorized(String message) {
+	public static Response unauthorized(String message) {
 		return Response
 			.status(Status.UNAUTHORIZED)
 			.entity(toMessage("error", message))
@@ -75,7 +75,7 @@ public abstract class AbstractResource {
 	 * 
 	 * @return Bad request response (HTTP 400)
 	 */
-	protected static Response bad(String message) {
+	public static Response bad(String message) {
 		return Response
 			.status(Status.BAD_REQUEST)
 			.entity(toMessage("error", message))
@@ -88,7 +88,7 @@ public abstract class AbstractResource {
 	 * 
 	 * @return Unauthorized response (HTTP 401)
 	 */
-	protected static Response unauthorized() {
+	public static Response unauthorized() {
 		return Response
 			.status(Status.UNAUTHORIZED)
 			.entity(toMessage("error", "Unauthorized"))
@@ -101,7 +101,7 @@ public abstract class AbstractResource {
 		return r;
 	}
 
-	protected static Response missing(String format, Object... args) {
+	public static Response missing(String format, Object... args) {
 		return missing(String.format(format, args));
 	}
 
@@ -112,14 +112,14 @@ public abstract class AbstractResource {
 	 * @param message the optional message to be included in response
 	 * @return Missing response (HTTP 404)
 	 */
-	protected static Response missing(String message) {
+	public static Response missing(String message) {
 		return Response
 			.status(Status.NOT_FOUND)
 			.entity(toMessage("error", message))
 			.build();
 	}
 
-	protected static Response ok() {
+	public static Response ok() {
 		return Response
 			.status(Status.OK)
 			.build();
@@ -131,7 +131,7 @@ public abstract class AbstractResource {
 	 * @param object the object to be marshaled into response
 	 * @return OK response (HTTP 200)
 	 */
-	protected static Response ok(Object object) {
+	public static Response ok(Object object) {
 
 		if (object instanceof String) {
 			try {
@@ -148,7 +148,7 @@ public abstract class AbstractResource {
 			.build();
 	}
 
-	protected static Response removed(Serializable id) {
+	public static Response removed(Serializable id) {
 		Map<String, Object> response = new HashMap<String, Object>();
 		response.put("removed", id);
 		return ok(response);
@@ -160,7 +160,7 @@ public abstract class AbstractResource {
 	 * @param object the created object to be marshaled into response
 	 * @return Created response (HTTP 201)
 	 */
-	protected static Response created(Object object) {
+	public static Response created(Object object) {
 		return Response
 			.status(Status.CREATED)
 			.entity(object)
@@ -174,7 +174,7 @@ public abstract class AbstractResource {
 	 * @param pkey the processing key
 	 * @return Accepted response (HTTP 202)
 	 */
-	protected static Response accepted(Object pkey) {
+	public static Response accepted(Object pkey) {
 		return Response
 			.status(Status.ACCEPTED)
 			.entity(pkey)

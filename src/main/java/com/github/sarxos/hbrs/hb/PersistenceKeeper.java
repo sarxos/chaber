@@ -323,19 +323,7 @@ public abstract class PersistenceKeeper implements Closeable {
 			throw new IllegalArgumentException(String.format("Class %s is not a database entity", clazz.getName()));
 		}
 
-		ClassMetadata cm = getSessionFactory().getClassMetadata(clazz);
-
-		String idn = cm.getIdentifierPropertyName();
-		String csn = clazz.getSimpleName();
-
-		long count = (Long) session()
-			.createQuery(String.format("select count(1) from %s e where e.%s = :id", csn, idn))
-			.setSerializable("id", id)
-			.setMaxResults(1)
-			.setCacheable(false)
-			.uniqueResult();
-
-		return count > 0;
+		return session().get(clazz, id) != null;
 	}
 
 	/**
