@@ -38,6 +38,8 @@ import org.glassfish.jersey.process.internal.RequestScoped;
 import org.hibernate.Hibernate;
 import org.hibernate.HibernateException;
 import org.hibernate.Query;
+import org.hibernate.ScrollMode;
+import org.hibernate.ScrollableResults;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.StatelessSession;
@@ -397,6 +399,18 @@ public abstract class PersistenceKeeper implements Closeable {
 		}
 
 		return entities;
+	}
+
+	public <T extends Identity<?>> ScrollableResultsIterator<T> cursor(Class<T> clazz) {
+
+		Session session = session();
+		ScrollableResults scroll = session
+			.createQuery(String.format("from %s", clazz.getSimpleName()))
+			.setReadOnly(true)
+			.setFetchSize(Integer.MIN_VALUE)
+			.scroll(ScrollMode.FORWARD_ONLY);
+
+		return new ScrollableResultsIterator<>(scroll, session);
 	}
 
 	/**

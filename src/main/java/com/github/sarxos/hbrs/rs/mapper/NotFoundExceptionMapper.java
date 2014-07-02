@@ -5,9 +5,6 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 import javax.ws.rs.ext.Provider;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import com.github.sarxos.hbrs.rs.AbstractExceptionMapper;
 
 
@@ -20,11 +17,6 @@ import com.github.sarxos.hbrs.rs.AbstractExceptionMapper;
  */
 @Provider
 public class NotFoundExceptionMapper extends AbstractExceptionMapper<NotFoundException> {
-
-	/**
-	 * Yup, this is a logger.
-	 */
-	private static final Logger LOG = LoggerFactory.getLogger(NotFoundExceptionMapper.class);
 
 	@Override
 	public Response toResponse(NotFoundException exception) {

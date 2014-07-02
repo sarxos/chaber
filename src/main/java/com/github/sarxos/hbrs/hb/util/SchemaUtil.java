@@ -27,14 +27,14 @@ import org.w3c.dom.Document;
  */
 public class SchemaUtil {
 
-	private static final class Configuration {
+	public static final class Configuration {
 
 		String clazz;
 		String user;
 		String password;
 	}
 
-	private static Configuration getConfiguration() {
+	public static Configuration getConfiguration() {
 
 		Configuration c = new Configuration();
 
