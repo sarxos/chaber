@@ -98,16 +98,22 @@ public abstract class PersistenceKeeper implements Closeable {
 	private static int batchSize = 50;
 
 	/**
-	 * Hibernate session.
+	 * Stateful session.
 	 */
-	private Session sessions;
+	protected Session sessions;
 
-	private StatelessSession statelessSession;
+	/**
+	 * Stateless session.
+	 */
+	protected StatelessSession statelessSession;
+
+	/**
+	 * Is closed.
+	 */
+	protected AtomicBoolean closed = new AtomicBoolean();
 
 	public PersistenceKeeper() {
 	}
-
-	private AtomicBoolean closed = new AtomicBoolean();
 
 	/**
 	 * Dispose keeper. This will flush and destroy Hibernate session. Please
