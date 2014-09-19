@@ -25,7 +25,7 @@ public class GenericJDBCExceptionMapper extends AbstractExceptionMapper<GenericJ
 	public Response toResponse(GenericJDBCException exception) {
 
 		if (exception == null) {
-			throw new IllegalArgumentException("Exception cannot eb null");
+			throw new IllegalArgumentException("Exception cannot be null");
 		}
 
 		LOG.error(exception.getMessage(), exception);

@@ -67,8 +67,8 @@ public class SchemaUtil {
 	}
 
 	/**
-	 * Will import schema to the database. Hibernate connection properties will
-	 * be used to setup database session.
+	 * Will import schema to the database. Hibernate connection properties will be used to setup
+	 * database session.
 	 * 
 	 * @param file the schema file in form of SQL dump
 	 */
@@ -181,18 +181,6 @@ public class SchemaUtil {
 				}
 			}
 		}
-
-	}
-
-	public static final void schemEvolve(String directory) {
-
-		Configuration cfg = getConfiguration();
-
-	}
-
-	public static void main(String[] args) {
-
-		// SchemaUtil.schemEvolve(directory);
 
 	}
 }

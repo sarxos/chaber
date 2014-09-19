@@ -1,6 +1,7 @@
 package com.github.sarxos.hbrs.hb;
 
 import java.io.Closeable;
+import java.io.File;
 import java.io.IOException;
 import java.io.Serializable;
 import java.lang.annotation.Annotation;
@@ -57,8 +58,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 
 /**
- * This class provide generic access to the Hibernate persistence layer. It's
- * very important to close persistence keeper when it's no longer necessary.
+ * This class provide generic access to the Hibernate persistence layer. It's very important to
+ * close persistence keeper when it's no longer necessary.
  * 
  * @author Bartosz Firyn (bfiryn)
  */
@@ -116,8 +117,8 @@ public abstract class PersistenceKeeper implements Closeable {
 	}
 
 	/**
-	 * Dispose keeper. This will flush and destroy Hibernate session. Please
-	 * note that L1 Hibernate cache will not be affected by this operation.
+	 * Dispose keeper. This will flush and destroy Hibernate session. Please note that L1 Hibernate
+	 * cache will not be affected by this operation.
 	 */
 	@Override
 	public void close() {
@@ -144,9 +145,24 @@ public abstract class PersistenceKeeper implements Closeable {
 	 * @return Session factory
 	 */
 	private static SessionFactory buildSessionFactory() {
+		return buildSessionFactory(null);
+	}
 
-		AnnotationConfiguration ac = new AnnotationConfiguration()
-			.configure();
+	/**
+	 * Create SessionFactory from hibernate.cfg.xml
+	 * 
+	 * @param packages the packages list where database entities are located
+	 * @return Session factory
+	 */
+	private static SessionFactory buildSessionFactory(File file) {
+
+		AnnotationConfiguration ac = new AnnotationConfiguration();
+
+		if (file == null) {
+			ac = ac.configure();
+		} else {
+			ac = ac.configure(file);
+		}
 
 		SessionFactory factory = null;
 		try {
@@ -231,10 +247,11 @@ public abstract class PersistenceKeeper implements Closeable {
 	}
 
 	/**
-	 * Will persist stateless (transient) entity. This method will validate
-	 * entity against possible constraints violation.
+	 * Will persist stateless (transient) entity. This method will validate entity against possible
+	 * constraints violation.
 	 * 
-	 * @param stateless the transient entity to be persisted
+	 * @param <T> identity class
+	 * @param entities the transient entities to be persisted
 	 * @return Return managed entity
 	 */
 	public <T extends Identity<?>> Collection<T> persist(Collection<T> entities) {
@@ -252,6 +269,7 @@ public abstract class PersistenceKeeper implements Closeable {
 	/**
 	 * Fetch entity from the database and return managed instance.
 	 * 
+	 * @param <T> identity class
 	 * @param clazz the entity class to be fetched
 	 * @param id the entity ID
 	 * @return Return managed entity
@@ -317,9 +335,9 @@ public abstract class PersistenceKeeper implements Closeable {
 	}
 
 	/**
-	 * Check if entity of given class and with the specified ID exists in the
-	 * database.
+	 * Check if entity of given class and with the specified ID exists in the database.
 	 * 
+	 * @param <T> identity class
 	 * @param clazz the entity class
 	 * @param id the entity ID
 	 * @return Return true if entity exists, false otherwise
@@ -340,10 +358,11 @@ public abstract class PersistenceKeeper implements Closeable {
 	}
 
 	/**
-	 * This method will return all instances of given entity. Be careful when
-	 * using this method because there can be millions of records in the
-	 * database, and thus, your memory consumption may gone wild.
+	 * This method will return all instances of given entity. Be careful when using this method
+	 * because there can be millions of records in the database, and thus, your memory consumption
+	 * may gone wild.
 	 * 
+	 * @param <T> identity class
 	 * @param clazz the entity class to be fetched
 	 * @return Return list of managed objects
 	 */
@@ -372,6 +391,7 @@ public abstract class PersistenceKeeper implements Closeable {
 	/**
 	 * Return paged result with specific entities inside.
 	 * 
+	 * @param <T> identity class
 	 * @param clazz the entity class
 	 * @param pgNum the first record offset
 	 * @param pgSize the max number of records per page
@@ -420,9 +440,10 @@ public abstract class PersistenceKeeper implements Closeable {
 	}
 
 	/**
-	 * Will persist stateless (transient) entity. This method will validate
-	 * entity against possible constraints violation.
+	 * Will persist stateless (transient) entity. This method will validate entity against possible
+	 * constraints violation.
 	 * 
+	 * @param <T> identity class
 	 * @param stateless the transient entity to be persisted
 	 * @return Return managed entity
 	 */
@@ -443,9 +464,9 @@ public abstract class PersistenceKeeper implements Closeable {
 	}
 
 	/**
-	 * Merge state of the detached instance into the corresponding managed
-	 * instance in the database.
+	 * Merge state of the detached instance into the corresponding managed instance in the database.
 	 * 
+	 * @param <T> identity class
 	 * @param entity the detached or managed entity instance
 	 * @return Return managed entity
 	 */
@@ -683,11 +704,11 @@ public abstract class PersistenceKeeper implements Closeable {
 	}
 
 	/**
-	 * This method takes dry object taken directly from the REST layer and
-	 * hydrate it using the data from the database. It takes all fields visible
-	 * in the REST interface and populate every one of them with the database
-	 * column value if and only if given field in dry object is null.
+	 * This method takes dry object taken directly from the REST layer and hydrate it using the data
+	 * from the database. It takes all fields visible in the REST interface and populate every one
+	 * of them with the database column value if and only if given field in dry object is null.
 	 * 
+	 * @param <T> identity class
 	 * @param dry the dry REST object to be hydrated
 	 * @return Return hydrated object
 	 */
@@ -735,14 +756,14 @@ public abstract class PersistenceKeeper implements Closeable {
 	}
 
 	/**
-	 * This method takes dry object taken directly from the REST layer and
-	 * hydrate it using the data from the managed entity. It takes all fields
-	 * visible in the REST interface and populate every one of them with the
-	 * managed entity corresponding attribute value if and only if given field
+	 * This method takes dry object taken directly from the REST layer and hydrate it using the data
+	 * from the managed entity. It takes all fields visible in the REST interface and populate every
+	 * one of them with the managed entity corresponding attribute value if and only if given field
 	 * in dry object is null.
 	 * 
+	 * @param <T> identity class
 	 * @param dry the dry REST object to be hydrated
-	 * @param manbaed the corresponding managed entity from the DB
+	 * @param managed the corresponding managed entity from the DB
 	 * @return Return hydrated object
 	 */
 	public <T> T hydrate(T dry, T managed) {
@@ -792,6 +813,7 @@ public abstract class PersistenceKeeper implements Closeable {
 	/**
 	 * Delete given entity.
 	 * 
+	 * @param <T> the identity class
 	 * @param entity the entity to be removed
 	 * @return Return detached entity without the ID
 	 */
@@ -886,6 +908,7 @@ public abstract class PersistenceKeeper implements Closeable {
 	/**
 	 * Delete entity of given class with given ID.
 	 * 
+	 * @param <T> the identity class
 	 * @param clazz the entity class
 	 * @param id the entity ID
 	 * @return Return true if entity was removed, false otherwise
@@ -1052,9 +1075,9 @@ public abstract class PersistenceKeeper implements Closeable {
 	}
 
 	/**
-	 * Initialize all lazy-loaded first-level entities which are not
-	 * JSON-ignored.
+	 * Initialize all lazy-loaded first-level entities which are not JSON-ignored.
 	 * 
+	 * @param <T> the identity class
 	 * @param entity the entity from which fields will be lazy loaded
 	 * @return Return the same object with lazy fields initialized
 	 */

@@ -46,6 +46,7 @@ public abstract class Worker<T> implements Runnable {
 
 	/**
 	 * @param name the worker name
+	 * @param capacity the worker capacity
 	 * @param start shall worker start immediately
 	 * @param stateless is worker stateless (does not create Hibernate session)
 	 */

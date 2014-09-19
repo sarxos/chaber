@@ -47,6 +47,7 @@ public abstract class AbstractResource {
 	/**
 	 * Return information saying that specific operation is forbidden.
 	 * 
+	 * @param message the message to be serialized into JSON
 	 * @return Forbidden response (HTTP 403)
 	 */
 	public static Response forbidden(Object message) {
@@ -57,9 +58,9 @@ public abstract class AbstractResource {
 	}
 
 	/**
-	 * Return information saying that operation caller is not authorized to
-	 * perform it.
+	 * Return information saying that operation caller is not authorized to perform it.
 	 * 
+	 * @param message the message to be serialized into JSON
 	 * @return Unauthorized response (HTTP 401)
 	 */
 	public static Response unauthorized(String message) {
@@ -70,9 +71,10 @@ public abstract class AbstractResource {
 	}
 
 	/**
-	 * Return information saying that caller send invalid request (e.g. entity
-	 * to add which already exists in database).
+	 * Return information saying that caller send invalid request (e.g. entity to add which already
+	 * exists in database).
 	 * 
+	 * @param message the message to be serialized into JSON
 	 * @return Bad request response (HTTP 400)
 	 */
 	public static Response bad(String message) {
@@ -83,8 +85,7 @@ public abstract class AbstractResource {
 	}
 
 	/**
-	 * Return information saying that operation caller is not authorized to
-	 * perform it.
+	 * Return information saying that operation caller is not authorized to perform it.
 	 * 
 	 * @return Unauthorized response (HTTP 401)
 	 */
@@ -106,8 +107,7 @@ public abstract class AbstractResource {
 	}
 
 	/**
-	 * Return information saying that specific resource has not been found or
-	 * does not exist.
+	 * Return information saying that specific resource has not been found or does not exist.
 	 * 
 	 * @param message the optional message to be included in response
 	 * @return Missing response (HTTP 404)
@@ -168,8 +168,8 @@ public abstract class AbstractResource {
 	}
 
 	/**
-	 * Response saying that resource has been accepted for processing but
-	 * response is not yet available.
+	 * Response saying that resource has been accepted for processing but response is not yet
+	 * available.
 	 * 
 	 * @param pkey the processing key
 	 * @return Accepted response (HTTP 202)

@@ -17,9 +17,6 @@ import com.github.sarxos.hbrs.rs.AbstractExceptionMapper;
 @Provider
 public class ParamExceptionMapper extends AbstractExceptionMapper<ParamException> {
 
-	@Inject
-	private javax.inject.Provider<ContainerRequest> containerRequestProvider;
-
 	@Override
 	public Response toResponse(ParamException exception) {
 
