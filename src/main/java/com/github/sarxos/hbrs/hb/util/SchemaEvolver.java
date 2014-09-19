@@ -152,9 +152,24 @@ public class SchemaEvolver {
 
 		LOG.info("Starting schema evolution script");
 
+		// verify path points to a directory
+
 		File dir = new File(path);
 		if (!dir.isDirectory()) {
 			throw new FileNotFoundException(path);
+		}
+
+		// verify if last path segment is the same as db name (for sanity purpose)
+
+		String dbname = null;
+		try {
+			dbname = connection.getCatalog();
+		} catch (SQLException e) {
+			throw new RuntimeException(e);
+		}
+
+		if (!dbname.equals(dir.getName())) {
+			throw new IllegalArgumentException("Last path segment must be the same as database name");
 		}
 
 		ArrayList<String> versions = new ArrayList<>();

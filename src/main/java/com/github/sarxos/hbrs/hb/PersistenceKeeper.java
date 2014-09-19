@@ -27,13 +27,8 @@ import javax.persistence.PreUpdate;
 import javax.validation.ConstraintViolation;
 import javax.validation.Validation;
 import javax.validation.Validator;
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
-import javax.xml.xpath.XPath;
-import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathException;
-import javax.xml.xpath.XPathFactory;
 
 import org.glassfish.jersey.process.internal.RequestScoped;
 import org.hibernate.Hibernate;
@@ -46,11 +41,11 @@ import org.hibernate.SessionFactory;
 import org.hibernate.StatelessSession;
 import org.hibernate.Transaction;
 import org.hibernate.cfg.AnnotationConfiguration;
+import org.hibernate.cfg.Configuration;
 import org.hibernate.metadata.ClassMetadata;
 import org.reflections.Reflections;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.w3c.dom.Document;
 import org.xml.sax.SAXException;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -92,9 +87,12 @@ public abstract class PersistenceKeeper implements Closeable {
 	/**
 	 * Hibernate session factory.
 	 */
-	private static SessionFactory factory = buildSessionFactory();
+	private static SessionFactory factory = null;
 
-	private static List<Class<?>> daoClasses = null;
+	/**
+	 * Hibernate session factory.
+	 */
+	private static Configuration configuration = null;
 
 	private static int batchSize = 50;
 
@@ -144,7 +142,7 @@ public abstract class PersistenceKeeper implements Closeable {
 	 * @param packages the packages list where database entities are located
 	 * @return Session factory
 	 */
-	private static SessionFactory buildSessionFactory() {
+	protected static SessionFactory buildSessionFactory() {
 		return buildSessionFactory(null);
 	}
 
@@ -154,26 +152,25 @@ public abstract class PersistenceKeeper implements Closeable {
 	 * @param packages the packages list where database entities are located
 	 * @return Session factory
 	 */
-	private static SessionFactory buildSessionFactory(File file) {
+	protected static SessionFactory buildSessionFactory(File file) {
 
-		AnnotationConfiguration ac = new AnnotationConfiguration();
+		configuration = new AnnotationConfiguration();
 
 		if (file == null) {
-			ac = ac.configure();
+			configuration = configuration.configure();
 		} else {
-			ac = ac.configure(file);
+			configuration = configuration.configure(file);
 		}
 
-		SessionFactory factory = null;
 		try {
 
 			for (Class<?> c : loadClasses()) {
-				ac.addAnnotatedClass(c);
+				((AnnotationConfiguration) configuration).addAnnotatedClass(c);
 			}
 
-			factory = ac.buildSessionFactory();
+			factory = configuration.buildSessionFactory();
 
-		} catch (Throwable e) {
+		} catch (Exception e) {
 			LOG.error("Initial SessionFactory creation failed", e);
 			throw new ExceptionInInitializerError(e);
 		}
@@ -978,23 +975,9 @@ public abstract class PersistenceKeeper implements Closeable {
 
 	private static Class<?>[] loadClasses() throws ParserConfigurationException, SAXException, IOException, XPathException {
 
-		DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-		dbf.setValidating(false);
-		dbf.setNamespaceAware(true);
-		dbf.setFeature("http://xml.org/sax/features/namespaces", false);
-		dbf.setFeature("http://xml.org/sax/features/validation", false);
-		dbf.setFeature("http://apache.org/xml/features/nonvalidating/load-dtd-grammar", false);
-		dbf.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
-
-		DocumentBuilder builder = dbf.newDocumentBuilder();
-		Document doc = builder.parse(PersistenceKeeper.class.getResourceAsStream("/hibernate.cfg.xml"));
-		XPathFactory xPathfactory = XPathFactory.newInstance();
-		XPath xpath = xPathfactory.newXPath();
-
-		String modelPackages = (String) xpath.compile("/hibernate-configuration/session-factory/property[@name='com.github.sarxos.hbrs.db.model']/text()").evaluate(doc, XPathConstants.STRING);
-
+		String modelPackages = configuration.getProperty("com.github.sarxos.hbrs.db.model");
 		if (modelPackages == null) {
-			throw new IllegalStateException("Property 'com.github.sarxos.jaxrshb.db.packages' has not been defined in hibernate.cfg.xml file");
+			throw new IllegalStateException("Property 'com.github.sarxos.jaxrshb.db.packages' has not been defined in hibernate configuration file");
 		}
 
 		List<Class<?>> classes = new ArrayList<Class<?>>();
@@ -1014,64 +997,12 @@ public abstract class PersistenceKeeper implements Closeable {
 			LOG.info(sb.toString());
 		}
 
-		return classes.toArray(new Class<?>[classes.size()]);
-	}
-
-	private static final List<Class<?>> getDaoClasses0() throws ParserConfigurationException, SAXException, IOException, XPathException {
-
-		DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-		dbf.setValidating(false);
-		dbf.setNamespaceAware(true);
-		dbf.setFeature("http://xml.org/sax/features/namespaces", false);
-		dbf.setFeature("http://xml.org/sax/features/validation", false);
-		dbf.setFeature("http://apache.org/xml/features/nonvalidating/load-dtd-grammar", false);
-		dbf.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
-
-		DocumentBuilder builder = dbf.newDocumentBuilder();
-		Document doc = builder.parse(PersistenceKeeper.class.getResourceAsStream("/hibernate.cfg.xml"));
-		XPathFactory xPathfactory = XPathFactory.newInstance();
-		XPath xpath = xPathfactory.newXPath();
-
-		String batchSizeStr = (String) xpath.compile("/hibernate-configuration/session-factory/property[@name='hibernate.jdbc.batch_size']/text()").evaluate(doc, XPathConstants.STRING);
+		String batchSizeStr = configuration.getProperty("hibernate.jdbc.batch_size");
 		if (batchSizeStr != null && !batchSizeStr.isEmpty()) {
 			batchSize = Integer.parseInt(batchSizeStr);
 		}
 
-		String daoPackage = (String) xpath.compile("/hibernate-configuration/session-factory/property[@name='com.github.sarxos.hbrs.db.dao']/text()").evaluate(doc, XPathConstants.STRING);
-
-		if (daoPackage == null || daoPackage.trim().isEmpty()) {
-			throw new IllegalStateException("Database DAO package must be provided");
-		}
-
-		List<Class<?>> daoClasses = new ArrayList<Class<?>>();
-		String[] splitted = daoPackage.split(",");
-
-		for (String p : splitted) {
-			if (!(p = p.trim()).isEmpty()) {
-				daoClasses.addAll(new Reflections(p).getSubTypesOf(PersistenceKeeper.class));
-			}
-		}
-
-		if (LOG.isInfoEnabled()) {
-			StringBuilder sb = new StringBuilder("The following database DAO classes has been found:");
-			for (Class<?> c : daoClasses) {
-				sb.append("\n  ").append(c);
-			}
-			LOG.info(sb.toString());
-		}
-
-		return daoClasses;
-	}
-
-	public static List<Class<?>> getDaoClasses() {
-		if (daoClasses == null) {
-			try {
-				daoClasses = getDaoClasses0();
-			} catch (Exception e) {
-				throw new RuntimeException(e);
-			}
-		}
-		return daoClasses;
+		return classes.toArray(new Class<?>[classes.size()]);
 	}
 
 	/**
