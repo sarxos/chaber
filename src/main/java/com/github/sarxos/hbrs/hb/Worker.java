@@ -23,6 +23,8 @@ public abstract class Worker<T> implements Runnable {
 		}
 	}
 
+	private final Class<? extends PersistenceKeeper> clazz;
+
 	private final LinkedBlockingQueue<T> items;
 
 	private final String name;
@@ -32,26 +34,43 @@ public abstract class Worker<T> implements Runnable {
 
 	private AtomicBoolean running = new AtomicBoolean(false);
 
-	public Worker(String name) {
-		this(name, false);
-	}
-
-	public Worker(String name, boolean start) {
-		this(name, start, false);
-	}
-
-	public Worker(String name, boolean start, boolean stateless) {
-		this(name, 0, start, stateless);
+	/**
+	 * @param clazz the persistence keeper class to work with
+	 * @param name the worker name (will be used as thread name)
+	 */
+	public Worker(Class<? extends PersistenceKeeper> clazz, String name) {
+		this(clazz, name, false);
 	}
 
 	/**
+	 * @param clazz the persistence keeper class to work with
+	 * @param name the worker name (will be used as thread name)
+	 * @param start should worker start immediately
+	 */
+	public Worker(Class<? extends PersistenceKeeper> clazz, String name, boolean start) {
+		this(clazz, name, start, false);
+	}
+
+	/**
+	 * @param clazz the persistence keeper class to work with
+	 * @param name the worker name (will be used as thread name)
+	 * @param start should worker start immediately
+	 * @param stateless is worker stateless (will not create Hibernate session)
+	 */
+	public Worker(Class<? extends PersistenceKeeper> clazz, String name, boolean start, boolean stateless) {
+		this(clazz, name, 0, start, stateless);
+	}
+
+	/**
+	 * @param clazz the persistence keeper class
 	 * @param name the worker name
 	 * @param capacity the worker capacity
 	 * @param start shall worker start immediately
-	 * @param stateless is worker stateless (does not create Hibernate session)
+	 * @param stateless is worker stateless (will not create Hibernate session)
 	 */
-	public Worker(String name, int capacity, boolean start, boolean stateless) {
+	public Worker(Class<? extends PersistenceKeeper> clazz, String name, int capacity, boolean start, boolean stateless) {
 
+		this.clazz = clazz;
 		this.name = name;
 		this.runner = new Runner(this, name);
 		this.stateless = stateless;
@@ -225,6 +244,6 @@ public abstract class Worker<T> implements Runnable {
 	}
 
 	protected Session createSession() {
-		return PersistenceKeeper.getSessionFactory().openSession();
+		return PersistenceKeeper.getSessionFactory(clazz).openSession();
 	}
 }

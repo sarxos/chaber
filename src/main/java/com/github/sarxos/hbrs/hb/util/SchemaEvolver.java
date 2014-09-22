@@ -145,8 +145,8 @@ public class SchemaEvolver {
 	 * Evolve database schema.
 	 * 
 	 * @param path the path to schema directories
-	 * @throws IOException
-	 * @throws SQLException
+	 * @throws IOException when files cannot be read or is not a directory
+	 * @throws SQLException when something wrong happen in SQL 
 	 */
 	public void evolve(String path) throws IOException, SQLException {
 

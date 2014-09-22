@@ -8,8 +8,11 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.persistence.Column;
@@ -55,7 +58,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 /**
  * This class provide generic access to the Hibernate persistence layer. It's very important to
  * close persistence keeper when it's no longer necessary.
- * 
+ *
  * @author Bartosz Firyn (bfiryn)
  */
 @RequestScoped
@@ -87,13 +90,16 @@ public abstract class PersistenceKeeper implements Closeable {
 	/**
 	 * Hibernate session factory.
 	 */
-	private static SessionFactory factory = null;
+	private static final ConcurrentHashMap<String, SessionFactory> FACTORIES = new ConcurrentHashMap<String, SessionFactory>();
 
 	/**
-	 * Hibernate session factory.
+	 * Cache for class to hibernate session file path mapping.
 	 */
-	private static Configuration configuration = null;
+	private static final Map<Class<? extends PersistenceKeeper>, String> PATHS = new HashMap<>();
 
+	/**
+	 * Batch size.
+	 */
 	private static int batchSize = 50;
 
 	/**
@@ -123,7 +129,7 @@ public abstract class PersistenceKeeper implements Closeable {
 
 		if (closed.compareAndSet(false, true)) {
 
-			LOG.debug("Closing persistence keeper");
+			LOG.debug("Closing {} persistence keeper", getClass());
 
 			if (sessions != null && sessions.isOpen()) {
 				sessions.flush();
@@ -138,23 +144,26 @@ public abstract class PersistenceKeeper implements Closeable {
 
 	/**
 	 * Create SessionFactory from hibernate.cfg.xml
-	 * 
-	 * @param packages the packages list where database entities are located
+	 *
 	 * @return Session factory
 	 */
 	protected static SessionFactory buildSessionFactory() {
-		return buildSessionFactory(null);
+		return buildSessionFactory((File) null);
+	}
+
+	protected static SessionFactory buildSessionFactory(String path) {
+		return buildSessionFactory(new File(path));
 	}
 
 	/**
 	 * Create SessionFactory from hibernate.cfg.xml
-	 * 
-	 * @param packages the packages list where database entities are located
+	 *
+	 * @param file the file with hibernate configuration
 	 * @return Session factory
 	 */
 	protected static SessionFactory buildSessionFactory(File file) {
 
-		configuration = new AnnotationConfiguration();
+		AnnotationConfiguration configuration = new AnnotationConfiguration();
 
 		if (file == null) {
 			configuration = configuration.configure();
@@ -164,15 +173,93 @@ public abstract class PersistenceKeeper implements Closeable {
 
 		try {
 
-			for (Class<?> c : loadClasses()) {
-				((AnnotationConfiguration) configuration).addAnnotatedClass(c);
+			for (Class<?> c : loadClasses(configuration)) {
+
+				LOG.debug("Adding annotated {} to factory configuration from {}", c, file);
+
+				configuration.addAnnotatedClass(c);
 			}
 
-			factory = configuration.buildSessionFactory();
+			return configuration.buildSessionFactory();
 
 		} catch (Exception e) {
+
 			LOG.error("Initial SessionFactory creation failed", e);
+
 			throw new ExceptionInInitializerError(e);
+		}
+	}
+
+	/**
+	 * Get local session factory path (for this persistence keeper).
+	 *
+	 * @return Local session factory path.
+	 */
+	public String getSessionFactoryPath() {
+		return getSessionFactoryPath(getClass());
+	}
+
+	/**
+	 * Get session factory path for specific persistence keeper.
+	 *
+	 * @param clazz the persistent keeper class
+	 * @return Return Hibernate session factory
+	 */
+	public static String getSessionFactoryPath(Class<? extends PersistenceKeeper> clazz) {
+
+		String path = PATHS.get(clazz);
+		if (path != null) {
+			return path;
+		}
+
+		PersistentFactory pf = clazz.getAnnotation(PersistentFactory.class);
+		if (pf == null) {
+			throw new IllegalStateException("The persistent factory path is missing on " + clazz);
+		}
+
+		path = pf.value();
+
+		LOG.trace("Session factory path for {} is {}", clazz, path);
+
+		return path;
+	}
+
+	/**
+	 * Get session factory for specific persistence keeper.
+	 *
+	 * @param clazz the persistent keeper class
+	 * @return Return Hibernate session factory
+	 */
+	public static SessionFactory getSessionFactory(Class<? extends PersistenceKeeper> clazz) {
+		return getSessionFactory(getSessionFactoryPath(clazz));
+	}
+
+	/**
+	 * Get session factory from specific file path.
+	 *
+	 * @param path the path to session factory file
+	 * @return Return Hibernate session factory
+	 */
+	public static SessionFactory getSessionFactory(String path) {
+
+		SessionFactory factory = null;
+		SessionFactory prev = null;
+
+		while ((factory = FACTORIES.get(path)) == null) {
+
+			factory = buildSessionFactory(path);
+			prev = FACTORIES.putIfAbsent(path, factory);
+
+			if (prev != null) {
+				LOG.debug("Concurrent session factory creation detected for {}, closing new one", path);
+			} else {
+				LOG.debug("New session factory has been created for {}", path);
+			}
+
+			if (prev != null) {
+				factory.close();
+				factory = prev;
+			}
 		}
 
 		return factory;
@@ -181,11 +268,8 @@ public abstract class PersistenceKeeper implements Closeable {
 	/**
 	 * @return Return Hibernate session factory
 	 */
-	public static final SessionFactory getSessionFactory() {
-		if (factory == null) {
-			throw new IllegalStateException("Hibernate has not been initialized");
-		}
-		return factory;
+	public SessionFactory getSessionFactory() {
+		return getSessionFactory(getSessionFactoryPath());
 	}
 
 	public static int getBatchSize() {
@@ -193,19 +277,13 @@ public abstract class PersistenceKeeper implements Closeable {
 	}
 
 	/**
-	 * Initialize. This will build session factory.
-	 */
-	public static final void initialize() {
-		factory = buildSessionFactory();
-	}
-
-	/**
 	 * Shutdown persistence keeper. This operation will close session factory.
 	 */
 	public static void shutdown() {
-		if (factory != null) {
+		for (SessionFactory factory : FACTORIES.values()) {
 			factory.close();
 		}
+		FACTORIES.clear();
 	}
 
 	/**
@@ -246,7 +324,7 @@ public abstract class PersistenceKeeper implements Closeable {
 	/**
 	 * Will persist stateless (transient) entity. This method will validate entity against possible
 	 * constraints violation.
-	 * 
+	 *
 	 * @param <T> identity class
 	 * @param entities the transient entities to be persisted
 	 * @return Return managed entity
@@ -265,7 +343,7 @@ public abstract class PersistenceKeeper implements Closeable {
 
 	/**
 	 * Fetch entity from the database and return managed instance.
-	 * 
+	 *
 	 * @param <T> identity class
 	 * @param clazz the entity class to be fetched
 	 * @param id the entity ID
@@ -333,7 +411,7 @@ public abstract class PersistenceKeeper implements Closeable {
 
 	/**
 	 * Check if entity of given class and with the specified ID exists in the database.
-	 * 
+	 *
 	 * @param <T> identity class
 	 * @param clazz the entity class
 	 * @param id the entity ID
@@ -358,7 +436,7 @@ public abstract class PersistenceKeeper implements Closeable {
 	 * This method will return all instances of given entity. Be careful when using this method
 	 * because there can be millions of records in the database, and thus, your memory consumption
 	 * may gone wild.
-	 * 
+	 *
 	 * @param <T> identity class
 	 * @param clazz the entity class to be fetched
 	 * @return Return list of managed objects
@@ -387,7 +465,7 @@ public abstract class PersistenceKeeper implements Closeable {
 
 	/**
 	 * Return paged result with specific entities inside.
-	 * 
+	 *
 	 * @param <T> identity class
 	 * @param clazz the entity class
 	 * @param pgNum the first record offset
@@ -439,7 +517,7 @@ public abstract class PersistenceKeeper implements Closeable {
 	/**
 	 * Will persist stateless (transient) entity. This method will validate entity against possible
 	 * constraints violation.
-	 * 
+	 *
 	 * @param <T> identity class
 	 * @param stateless the transient entity to be persisted
 	 * @return Return managed entity
@@ -462,7 +540,7 @@ public abstract class PersistenceKeeper implements Closeable {
 
 	/**
 	 * Merge state of the detached instance into the corresponding managed instance in the database.
-	 * 
+	 *
 	 * @param <T> identity class
 	 * @param entity the detached or managed entity instance
 	 * @return Return managed entity
@@ -621,7 +699,7 @@ public abstract class PersistenceKeeper implements Closeable {
 		}
 
 		if (entities.size() >= batchSize) {
-			s = factory.openSession();
+			s = FACTORIES.get(getSessionFactoryPath()).openSession();
 		} else {
 			s = session();
 		}
@@ -704,7 +782,7 @@ public abstract class PersistenceKeeper implements Closeable {
 	 * This method takes dry object taken directly from the REST layer and hydrate it using the data
 	 * from the database. It takes all fields visible in the REST interface and populate every one
 	 * of them with the database column value if and only if given field in dry object is null.
-	 * 
+	 *
 	 * @param <T> identity class
 	 * @param dry the dry REST object to be hydrated
 	 * @return Return hydrated object
@@ -757,7 +835,7 @@ public abstract class PersistenceKeeper implements Closeable {
 	 * from the managed entity. It takes all fields visible in the REST interface and populate every
 	 * one of them with the managed entity corresponding attribute value if and only if given field
 	 * in dry object is null.
-	 * 
+	 *
 	 * @param <T> identity class
 	 * @param dry the dry REST object to be hydrated
 	 * @param managed the corresponding managed entity from the DB
@@ -809,7 +887,7 @@ public abstract class PersistenceKeeper implements Closeable {
 
 	/**
 	 * Delete given entity.
-	 * 
+	 *
 	 * @param <T> the identity class
 	 * @param entity the entity to be removed
 	 * @return Return detached entity without the ID
@@ -904,7 +982,7 @@ public abstract class PersistenceKeeper implements Closeable {
 
 	/**
 	 * Delete entity of given class with given ID.
-	 * 
+	 *
 	 * @param <T> the identity class
 	 * @param clazz the entity class
 	 * @param id the entity ID
@@ -959,7 +1037,7 @@ public abstract class PersistenceKeeper implements Closeable {
 
 	/**
 	 * Validate entity against constraints violation.
-	 * 
+	 *
 	 * @param entity the entity to be validated
 	 * @throws EntityValidationException when entity is not valid
 	 */
@@ -973,12 +1051,14 @@ public abstract class PersistenceKeeper implements Closeable {
 		throw new EntityValidationException(entity, violations);
 	}
 
-	private static Class<?>[] loadClasses() throws ParserConfigurationException, SAXException, IOException, XPathException {
+	private static Class<?>[] loadClasses(Configuration configuration) throws ParserConfigurationException, SAXException, IOException, XPathException {
 
 		String modelPackages = configuration.getProperty("com.github.sarxos.hbrs.db.model");
 		if (modelPackages == null) {
-			throw new IllegalStateException("Property 'com.github.sarxos.jaxrshb.db.packages' has not been defined in hibernate configuration file");
+			throw new IllegalStateException("Property 'com.github.sarxos.hbrs.db.model' has not been defined in hibernate configuration file");
 		}
+
+		LOG.debug("The com.github.sarxos.hbrs.db.model is {}", modelPackages);
 
 		List<Class<?>> classes = new ArrayList<Class<?>>();
 		String[] splitted = modelPackages.split(",");
@@ -1007,7 +1087,7 @@ public abstract class PersistenceKeeper implements Closeable {
 
 	/**
 	 * Initialize all lazy-loaded first-level entities which are not JSON-ignored.
-	 * 
+	 *
 	 * @param <T> the identity class
 	 * @param entity the entity from which fields will be lazy loaded
 	 * @return Return the same object with lazy fields initialized

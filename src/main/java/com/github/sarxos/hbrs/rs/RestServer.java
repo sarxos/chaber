@@ -60,7 +60,7 @@ public class RestServer implements Runnable {
 	/**
 	 * Set web application path.
 	 * 
-	 * @param path
+	 * @param path the web application path (directory where WEB-INF is located)
 	 */
 	public void setWebApplicationPath(String path) {
 
