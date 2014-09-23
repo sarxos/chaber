@@ -148,6 +148,7 @@ public abstract class Worker<T> implements Runnable {
 		int bs = PersistenceKeeper.getBatchSize();
 		int c = 0;
 
+		PersistenceKeeper k = null;
 		Transaction t = null;
 		Session s = null;
 
@@ -174,7 +175,7 @@ public abstract class Worker<T> implements Runnable {
 							s.clear();
 							LOG.error(e.getMessage(), e);
 						} finally {
-							s.close();
+							k.close();
 						}
 					}
 
@@ -193,7 +194,8 @@ public abstract class Worker<T> implements Runnable {
 
 			if (!stateless) {
 				if (s == null || !s.isOpen()) {
-					s = createSession();
+					k = create();
+					s = k.session();
 					t = s.beginTransaction();
 				}
 			}
@@ -211,7 +213,7 @@ public abstract class Worker<T> implements Runnable {
 						LOG.error("Cannot rollback", e2);
 					} finally {
 						s.clear();
-						s.close();
+						k.close();
 					}
 				}
 
@@ -243,7 +245,15 @@ public abstract class Worker<T> implements Runnable {
 		}
 	}
 
-	protected Session createSession() {
-		return PersistenceKeeper.getSessionFactory(clazz).openSession();
+	protected PersistenceKeeper create() {
+
+		PersistenceKeeper keeper = null;
+		try {
+			keeper = clazz.newInstance();
+		} catch (InstantiationException | IllegalAccessException e) {
+			throw new RuntimeException(e);
+		}
+
+		return keeper;
 	}
 }

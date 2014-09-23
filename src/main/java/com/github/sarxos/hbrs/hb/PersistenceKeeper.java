@@ -217,9 +217,9 @@ public abstract class PersistenceKeeper implements Closeable {
 			throw new IllegalStateException("The persistent factory path is missing on " + clazz);
 		}
 
-		path = pf.value();
+		PATHS.put(clazz, path = pf.value());
 
-		LOG.trace("Session factory path for {} is {}", clazz, path);
+		LOG.debug("Session factory path for {} is {}", clazz, path);
 
 		return path;
 	}
