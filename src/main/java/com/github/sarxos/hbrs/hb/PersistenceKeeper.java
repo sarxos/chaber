@@ -5,6 +5,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.Serializable;
 import java.lang.annotation.Annotation;
+import java.lang.management.ManagementFactory;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -15,6 +16,13 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import javax.annotation.ManagedBean;
+import javax.management.InstanceNotFoundException;
+import javax.management.MBeanException;
+import javax.management.MBeanServer;
+import javax.management.MalformedObjectNameException;
+import javax.management.ObjectName;
+import javax.management.ReflectionException;
 import javax.persistence.Column;
 import javax.persistence.Entity;
 import javax.persistence.ManyToMany;
@@ -217,11 +225,49 @@ public abstract class PersistenceKeeper implements Closeable {
 			throw new IllegalStateException("The persistent factory path is missing on " + clazz);
 		}
 
-		PATHS.put(clazz, path = pf.value());
+		path = pf.path();
 
-		LOG.debug("Session factory path for {} is {}", clazz, path);
+		String resolved = null;
 
-		return path;
+		Class<? extends PersistenceFactoryPathResolver> resolverClass = pf.resolver();
+		if (resolverClass == PersistenceFactoryPathResolver.class) {
+			resolved = path;
+		} else {
+
+			ManagedBean mb = resolverClass.getAnnotation(ManagedBean.class);
+			if (mb != null) {
+
+				String name = mb.value();
+				if (name.isEmpty()) {
+					name = clazz.getName();
+				}
+
+				MBeanServer server = ManagementFactory.getPlatformMBeanServer();
+
+				String fname = resolverClass.getPackage().getName() + ":name=" + name;
+
+				try {
+					ObjectName oname = new ObjectName(fname);
+					resolved = (String) server.invoke(oname, "resolve", new Object[] { path }, new String[] { "java.lang.String" });
+				} catch (MalformedObjectNameException | InstanceNotFoundException | ReflectionException | MBeanException e) {
+					LOG.debug("Cannot resolve path using managed bean", e);
+				}
+			}
+
+			if (resolved == null) {
+				try {
+					resolved = resolverClass.newInstance().resolve(path);
+				} catch (InstantiationException | IllegalAccessException e) {
+					throw new RuntimeException(e);
+				}
+			}
+		}
+
+		PATHS.put(clazz, resolved);
+
+		LOG.debug("Session factory path for {} is {}", clazz, resolved);
+
+		return resolved;
 	}
 
 	/**
