@@ -10,7 +10,7 @@
 
 	<groupId>com.github.sarxos</groupId>
 	<artifactId>chaber</artifactId>
-	<version>1.4.21</version>
+	<version>1.4.22</version>
 
 	<name>Chaber</name>
 
@@ -22,6 +22,7 @@
 
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<jersey.version>2.6</jersey.version>
 	</properties>
 
 	<scm>
@@ -165,13 +166,7 @@
 		<dependency>
 			<groupId>org.reflections</groupId>
 			<artifactId>reflections</artifactId>
-			<version>0.9.9-RC1</version>
-			<exclusions>
-				<exclusion>
-					<artifactId>guava</artifactId>
-					<groupId>com.google.guava</groupId>
-				</exclusion>
-			</exclusions>
+			<version>0.9.9</version>
 		</dependency>		
 		<!-- JAX-RS -->
 		<dependency>
@@ -203,12 +198,12 @@
 		<dependency>
 			<groupId>org.glassfish.jersey.ext</groupId>
 			<artifactId>jersey-bean-validation</artifactId>
-			<version>2.5.1</version>
+			<version>${jersey.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.glassfish.jersey.containers</groupId>
 			<artifactId>jersey-container-servlet</artifactId>
-			<version>2.5.1</version>
+			<version>${jersey.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.eclipse.jetty.aggregate</groupId>

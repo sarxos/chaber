@@ -250,7 +250,8 @@ public abstract class PersistenceKeeper implements Closeable {
 					ObjectName oname = new ObjectName(fname);
 					resolved = (String) server.invoke(oname, "resolve", new Object[] { path }, new String[] { "java.lang.String" });
 				} catch (MalformedObjectNameException | InstanceNotFoundException | ReflectionException | MBeanException e) {
-					LOG.debug("Cannot resolve path using managed bean", e);
+					LOG.trace("Managed bean exception", e);
+					LOG.debug("Cannot resolve path using managed bean, will create new instance");
 				}
 			}
 

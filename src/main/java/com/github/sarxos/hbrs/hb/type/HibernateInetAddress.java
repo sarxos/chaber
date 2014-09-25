@@ -2,6 +2,7 @@ package com.github.sarxos.hbrs.hb.type;
 
 import java.io.Serializable;
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -9,8 +10,6 @@ import java.sql.Types;
 
 import org.hibernate.HibernateException;
 import org.hibernate.usertype.UserType;
-
-import com.google.common.net.InetAddresses;
 
 
 public class HibernateInetAddress implements UserType {
@@ -38,7 +37,11 @@ public class HibernateInetAddress implements UserType {
 	@Override
 	public Object nullSafeGet(ResultSet rs, String[] names, Object owner) throws HibernateException, SQLException {
 		String value = rs.getString(names[0]);
-		return value == null ? null : InetAddresses.forString(value);
+		try {
+			return value == null ? null : InetAddress.getByName(value);
+		} catch (UnknownHostException e) {
+			throw new RuntimeException(e);
+		}
 	}
 
 	@Override
@@ -53,7 +56,7 @@ public class HibernateInetAddress implements UserType {
 			throw new IllegalArgumentException(String.format("Value must be %s, is %s", InetAddress.class, value.getClass()));
 		}
 
-		st.setString(index, InetAddresses.toAddrString((InetAddress) value));
+		st.setString(index, ((InetAddress) value).getHostAddress());
 	}
 
 	@Override
@@ -68,12 +71,16 @@ public class HibernateInetAddress implements UserType {
 
 	@Override
 	public Serializable disassemble(Object value) throws HibernateException {
-		return value == null ? null : InetAddresses.toAddrString((InetAddress) value);
+		return value == null ? null : ((InetAddress) value).getHostAddress();
 	}
 
 	@Override
 	public Object assemble(Serializable cached, Object owner) throws HibernateException {
-		return cached == null ? null : InetAddresses.forString(cached.toString());
+		try {
+			return cached == null ? null : InetAddress.getByName(cached.toString());
+		} catch (UnknownHostException e) {
+			throw new RuntimeException(e);
+		}
 	}
 
 	@Override

@@ -12,8 +12,6 @@ import org.reflections.ReflectionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.base.Predicates;
-
 
 public class PersistenceHooks extends EmptyInterceptor {
 
@@ -38,7 +36,7 @@ public class PersistenceHooks extends EmptyInterceptor {
 		Set<Method> hooks = HOOKS.get(key);
 
 		if (hooks == null) {
-			HOOKS.put(key, hooks = ReflectionUtils.getMethods(clazz, Predicates.and(ReflectionUtils.withAnnotation(a))));
+			HOOKS.put(key, hooks = ReflectionUtils.getAllMethods(clazz, ReflectionUtils.withAnnotation(a)));
 		}
 		if (enabled == null) {
 			ENABLED.put(key, !hooks.isEmpty());
