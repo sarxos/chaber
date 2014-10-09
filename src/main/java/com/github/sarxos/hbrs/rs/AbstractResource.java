@@ -46,7 +46,7 @@ public abstract class AbstractResource {
 
 	/**
 	 * Return information saying that specific operation is forbidden.
-	 * 
+	 *
 	 * @param message the message to be serialized into JSON
 	 * @return Forbidden response (HTTP 403)
 	 */
@@ -59,7 +59,7 @@ public abstract class AbstractResource {
 
 	/**
 	 * Return information saying that operation caller is not authorized to perform it.
-	 * 
+	 *
 	 * @param message the message to be serialized into JSON
 	 * @return Unauthorized response (HTTP 401)
 	 */
@@ -71,9 +71,21 @@ public abstract class AbstractResource {
 	}
 
 	/**
+	 * Return information saying that operation caller is not authorized to perform it.
+	 *
+	 * @return Unauthorized response (HTTP 401)
+	 */
+	public static Response unauthorized() {
+		return Response
+			.status(Status.UNAUTHORIZED)
+			.entity(toMessage("error", "Unauthorized"))
+			.build();
+	}
+
+	/**
 	 * Return information saying that caller send invalid request (e.g. entity to add which already
 	 * exists in database).
-	 * 
+	 *
 	 * @param message the message to be serialized into JSON
 	 * @return Bad request response (HTTP 400)
 	 */
@@ -81,18 +93,6 @@ public abstract class AbstractResource {
 		return Response
 			.status(Status.BAD_REQUEST)
 			.entity(toMessage("error", message))
-			.build();
-	}
-
-	/**
-	 * Return information saying that operation caller is not authorized to perform it.
-	 * 
-	 * @return Unauthorized response (HTTP 401)
-	 */
-	public static Response unauthorized() {
-		return Response
-			.status(Status.UNAUTHORIZED)
-			.entity(toMessage("error", "Unauthorized"))
 			.build();
 	}
 
@@ -108,7 +108,7 @@ public abstract class AbstractResource {
 
 	/**
 	 * Return information saying that specific resource has not been found or does not exist.
-	 * 
+	 *
 	 * @param message the optional message to be included in response
 	 * @return Missing response (HTTP 404)
 	 */
@@ -127,7 +127,7 @@ public abstract class AbstractResource {
 
 	/**
 	 * Response saying that everything is OK.
-	 * 
+	 *
 	 * @param object the object to be marshaled into response
 	 * @return OK response (HTTP 200)
 	 */
@@ -156,7 +156,7 @@ public abstract class AbstractResource {
 
 	/**
 	 * Response saying that resource has been created.
-	 * 
+	 *
 	 * @param object the created object to be marshaled into response
 	 * @return Created response (HTTP 201)
 	 */
@@ -164,20 +164,6 @@ public abstract class AbstractResource {
 		return Response
 			.status(Status.CREATED)
 			.entity(object)
-			.build();
-	}
-
-	/**
-	 * Response saying that resource has been accepted for processing but response is not yet
-	 * available.
-	 * 
-	 * @param pkey the processing key
-	 * @return Accepted response (HTTP 202)
-	 */
-	public static Response accepted(Object pkey) {
-		return Response
-			.status(Status.ACCEPTED)
-			.entity(pkey)
 			.build();
 	}
 

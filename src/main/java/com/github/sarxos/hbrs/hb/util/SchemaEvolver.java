@@ -25,7 +25,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * MySQL schema upgrade tool.
- * 
+ *
  * @author Bartosz Firyn (sarxos)
  */
 public class SchemaEvolver {
@@ -37,7 +37,7 @@ public class SchemaEvolver {
 
 	/**
 	 * Used to compare two schema version strings.
-	 * 
+	 *
 	 * @author Bartosz Firyn (sarxos)
 	 */
 	private static final class VersionComparator implements Comparator<String> {
@@ -72,7 +72,7 @@ public class SchemaEvolver {
 
 	/**
 	 * Used to filter schema version directories.
-	 * 
+	 *
 	 * @author Bartosz Firyn (sarxos)
 	 */
 	private static final class EvolutionDirFilter implements FilenameFilter {
@@ -127,9 +127,11 @@ public class SchemaEvolver {
 	 */
 	private final Connection connection;
 
+	private final String dbname;
+
 	/**
 	 * Create MySQL schema evolver.
-	 * 
+	 *
 	 * @param connection the database connection, must not be null
 	 */
 	public SchemaEvolver(Connection connection) {
@@ -139,14 +141,20 @@ public class SchemaEvolver {
 		}
 
 		this.connection = connection;
+
+		try {
+			this.dbname = connection.getCatalog();
+		} catch (SQLException e) {
+			throw new RuntimeException(e);
+		}
 	}
 
 	/**
 	 * Evolve database schema.
-	 * 
+	 *
 	 * @param path the path to schema directories
 	 * @throws IOException when files cannot be read or is not a directory
-	 * @throws SQLException when something wrong happen in SQL 
+	 * @throws SQLException when something wrong happen in SQL
 	 */
 	public void evolve(String path) throws IOException, SQLException {
 
@@ -157,15 +165,6 @@ public class SchemaEvolver {
 		File dir = new File(path);
 		if (!dir.isDirectory()) {
 			throw new FileNotFoundException(path);
-		}
-
-		// verify if last path segment is the same as db name (for sanity purpose)
-
-		String dbname = null;
-		try {
-			dbname = connection.getCatalog();
-		} catch (SQLException e) {
-			throw new RuntimeException(e);
 		}
 
 		if (!dbname.equals(dir.getName())) {
@@ -183,7 +182,7 @@ public class SchemaEvolver {
 		String newest = versions.get(versions.size() - 1);
 		String direction = null;
 
-		LOG.info("Current schema version is {} and the newest one is {}", current, newest);
+		LOG.info("Current {} schema version is {} and the newest one is {}", dbname, current, newest);
 
 		int result = VC.compare(current, newest);
 		Iterator<String> vi = null;
@@ -191,14 +190,14 @@ public class SchemaEvolver {
 		// return if schema is the newest one
 
 		if (result == 0) {
-			LOG.info("Schema version is already the newest one");
+			LOG.info("The {} schema version is already the newest one", dbname);
 			return;
 		} else if (result < 0) {
-			LOG.info("Schema version should be upgraded");
+			LOG.info("The {} schema version should be upgraded", dbname);
 			direction = UPGRADE;
 			vi = versions.listIterator();
 		} else {
-			LOG.info("Schema version should be downgraded (not implemented yet)");
+			LOG.info("The {} schema version should be downgraded (not implemented yet)", dbname);
 			direction = DOWNGRADE;
 			vi = new ReverseListIterator<>(versions);
 		}
@@ -210,18 +209,18 @@ public class SchemaEvolver {
 			switch (direction) {
 				case UPGRADE:
 					if (VC.compare(version, current) <= 0) {
-						LOG.debug("Skipping {} vs current {}", version, current);
+						LOG.info("The {} schema skipping {} vs current {}", dbname, version, current);
 						continue;
 					} else {
-						LOG.info("Processing schema version {} {}", version, direction);
+						LOG.info("Processing {} schema version {} {}", dbname, version, direction);
 					}
 					break;
 				case DOWNGRADE:
 					if (VC.compare(current, version) >= 0) {
-						LOG.debug("Skipping {} vs current {}", version, current);
+						LOG.info("The {} schema skipping {} vs current {}", dbname, version, current);
 						continue;
 					} else {
-						LOG.info("Processing schema version {} {}", version, direction);
+						LOG.info("Processing {} schema version {} {}", dbname, version, direction);
 					}
 					break;
 			}
@@ -232,7 +231,7 @@ public class SchemaEvolver {
 			if (sqlfile.exists()) {
 				evaluate(sqlfile);
 			} else {
-				LOG.debug("No {} has been found", sqlfile);
+				LOG.warn("No {} has been found for schema {}", sqlfile, dbname);
 			}
 
 			updateVersion(version);
@@ -241,7 +240,7 @@ public class SchemaEvolver {
 
 	/**
 	 * Evaluate SQL file.
-	 * 
+	 *
 	 * @param file the file object
 	 * @throws IOException when file cannot be read
 	 * @throws SQLException when there is an SQL syntax in given file
@@ -293,7 +292,7 @@ public class SchemaEvolver {
 				if (semicolon) {
 
 					String sql = sb.toString();
-					LOG.debug("mysql> {}", sql);
+					LOG.info("{} mysql> {}", dbname, sql);
 
 					try (Statement stmt = connection.createStatement()) {
 						stmt.execute(sql);
@@ -301,6 +300,11 @@ public class SchemaEvolver {
 						sb.delete(0, sb.length());
 					}
 				}
+			}
+
+			String sql = sb.toString().trim();
+			if (!sql.isEmpty()) {
+				throw new SQLException("Syntax error, delimiter is missing on: " + sql);
 			}
 
 			for (ImmutablePair<String, Object> param : params) {
@@ -311,13 +315,13 @@ public class SchemaEvolver {
 
 	/**
 	 * Set connection parameter value.
-	 * 
+	 *
 	 * @param name the parameter name
 	 * @param value the new parameter value
 	 * @throws SQLException when parameter name is invalid
 	 */
 	private final void setParam(String name, Object value) throws SQLException {
-		LOG.debug("mysql> SET {} = {} ", name, value instanceof String ? "'" + value + "'" : value);
+		LOG.info("{} mysql> SET {} = {} ", dbname, name, value instanceof String ? "'" + value + "'" : value);
 		try (PreparedStatement stmt = connection.prepareStatement("SET " + name + " = ?")) {
 			stmt.setObject(1, value);
 			stmt.execute();
@@ -326,7 +330,7 @@ public class SchemaEvolver {
 
 	/**
 	 * Get connection parameter
-	 * 
+	 *
 	 * @param param the parameter name
 	 * @param defValue the parameter default value
 	 * @return Parameter value of default one if parameter is not defined
@@ -338,7 +342,7 @@ public class SchemaEvolver {
 		String query = "SELECT " + name;
 		Object value = null;
 
-		LOG.debug("mysql> {}", query);
+		LOG.info("{} mysql> {}", dbname, query);
 
 		try (Statement stmt = connection.createStatement()) {
 			try (ResultSet rs = stmt.executeQuery(query)) {
@@ -355,7 +359,7 @@ public class SchemaEvolver {
 
 	/**
 	 * Get current schema version from database.
-	 * 
+	 *
 	 * @return Currently installed database schema version
 	 * @throws SQLException
 	 */
@@ -367,7 +371,7 @@ public class SchemaEvolver {
 				}
 			} catch (SQLException e) {
 				LOG.trace(e.getMessage(), e);
-				LOG.debug("No version table detected");
+				LOG.info("No version table detected in {} schema", dbname);
 			}
 		}
 		return "00.00.00.00.00.00.000";
@@ -375,12 +379,12 @@ public class SchemaEvolver {
 
 	/**
 	 * Update version in database.
-	 * 
+	 *
 	 * @param version
 	 * @throws SQLException
 	 */
 	private final void updateVersion(String version) throws SQLException {
-		LOG.debug("Update version to {}", version);
+		LOG.info("The {} schema update version to {}", dbname, version);
 		try (PreparedStatement stmt = connection.prepareStatement("UPDATE version v SET v.version = ? WHERE v.id = 1")) {
 			stmt.setString(1, version);
 			stmt.execute();
