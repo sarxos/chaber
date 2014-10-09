@@ -295,11 +295,6 @@ public abstract class PersistenceKeeper implements Closeable {
 		while ((factory = FACTORIES.get(path)) == null) {
 
 			synchronized (PersistenceKeeper.class) {
-
-				if (LOG.isDebugEnabled()) {
-					LOG.debug("PK: ", PersistenceKeeper.class.hashCode());
-				}
-
 				if ((factory = FACTORIES.get(path)) == null) {
 					factory = buildSessionFactory(path);
 					prev = FACTORIES.putIfAbsent(path, factory);
