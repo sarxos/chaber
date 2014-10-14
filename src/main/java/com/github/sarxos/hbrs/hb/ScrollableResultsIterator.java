@@ -1,12 +1,22 @@
 package com.github.sarxos.hbrs.hb;
 
+import java.io.Closeable;
+import java.io.IOException;
 import java.util.Iterator;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.hibernate.ScrollableResults;
 import org.hibernate.Session;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 
-public class ScrollableResultsIterator<T> implements Iterator<T> {
+public class ScrollableResultsIterator<T> implements Iterator<T>, Closeable {
+
+	/**
+	 * I'm the logger.
+	 */
+	private static final Logger LOG = LoggerFactory.getLogger(ScrollableResultsIterator.class);
 
 	private static final int DEFAULT_FLUSH_LIMIT = PersistenceKeeper.getBatchSize();
 
@@ -14,6 +24,7 @@ public class ScrollableResultsIterator<T> implements Iterator<T> {
 	private T next = null;
 	private Session session;
 	private long count = 0;
+	private AtomicBoolean open = new AtomicBoolean(true);
 
 	public ScrollableResultsIterator(ScrollableResults sr, Session session) {
 		this.sr = sr;
@@ -21,12 +32,15 @@ public class ScrollableResultsIterator<T> implements Iterator<T> {
 	}
 
 	/**
-	 * ScrollableResults does not provide a hasNext method, implemented here for
-	 * Iterator interface.
+	 * ScrollableResults does not provide a hasNext method, implemented here for Iterator interface.
 	 */
 	@Override
 	@SuppressWarnings("unchecked")
 	public boolean hasNext() {
+
+		if (!open.get()) {
+			throw new IllegalStateException("Cursor iterator is already closed");
+		}
 
 		if (sr.next()) {
 			next = (T) sr.get()[0];
@@ -40,6 +54,10 @@ public class ScrollableResultsIterator<T> implements Iterator<T> {
 	@Override
 	@SuppressWarnings("unchecked")
 	public T next() {
+
+		if (!open.get()) {
+			throw new IllegalStateException("Cursor iterator is already closed");
+		}
 
 		T toReturn = null;
 
@@ -61,7 +79,11 @@ public class ScrollableResultsIterator<T> implements Iterator<T> {
 		// if we are at the end, close the result set
 
 		if (toReturn == null) {
-			sr.close();
+			try {
+				close();
+			} catch (IOException e) {
+				LOG.error("IO exception when closing cursor", e);
+			}
 		} else {
 
 			// clear memory to avoid memory leak
@@ -86,5 +108,13 @@ public class ScrollableResultsIterator<T> implements Iterator<T> {
 	@Override
 	public void remove() {
 		throw new UnsupportedOperationException();
+	}
+
+	@Override
+	public void close() throws IOException {
+		if (open.compareAndSet(true, false)) {
+			sr.close();
+			flush();
+		}
 	}
 }
