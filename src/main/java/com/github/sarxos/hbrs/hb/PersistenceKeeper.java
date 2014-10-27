@@ -113,7 +113,7 @@ public abstract class PersistenceKeeper implements Closeable {
 	/**
 	 * Stateful session.
 	 */
-	protected Session sessions;
+	protected Session session;
 
 	/**
 	 * Stateless session.
@@ -139,9 +139,9 @@ public abstract class PersistenceKeeper implements Closeable {
 
 			LOG.debug("Closing {} persistence keeper", getClass());
 
-			if (sessions != null && sessions.isOpen()) {
-				sessions.flush();
-				sessions.close();
+			if (session != null && session.isOpen()) {
+				session.flush();
+				session.close();
 			}
 
 			if (statelessSession != null) {
@@ -344,10 +344,10 @@ public abstract class PersistenceKeeper implements Closeable {
 		if (closed.get()) {
 			throw new IllegalStateException("Keeper has been already closed");
 		}
-		if (sessions == null) {
-			return sessions = getSessionFactory().openSession();
+		if (session == null) {
+			return session = getSessionFactory().openSession();
 		} else {
-			return sessions;
+			return session;
 		}
 	}
 

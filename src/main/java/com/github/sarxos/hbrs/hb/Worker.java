@@ -11,7 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 
-public abstract class Worker<T> implements Runnable {
+public abstract class Worker<K extends PersistenceKeeper, T> implements Runnable {
 
 	private static final Logger LOG = LoggerFactory.getLogger(Worker.class);
 
@@ -23,7 +23,7 @@ public abstract class Worker<T> implements Runnable {
 		}
 	}
 
-	private final Class<? extends PersistenceKeeper> clazz;
+	private final Class<K> clazz;
 
 	private final LinkedBlockingQueue<T> items;
 
@@ -38,7 +38,7 @@ public abstract class Worker<T> implements Runnable {
 	 * @param clazz the persistence keeper class to work with
 	 * @param name the worker name (will be used as thread name)
 	 */
-	public Worker(Class<? extends PersistenceKeeper> clazz, String name) {
+	public Worker(Class<K> clazz, String name) {
 		this(clazz, name, false);
 	}
 
@@ -47,7 +47,7 @@ public abstract class Worker<T> implements Runnable {
 	 * @param name the worker name (will be used as thread name)
 	 * @param start should worker start immediately
 	 */
-	public Worker(Class<? extends PersistenceKeeper> clazz, String name, boolean start) {
+	public Worker(Class<K> clazz, String name, boolean start) {
 		this(clazz, name, start, false);
 	}
 
@@ -57,7 +57,7 @@ public abstract class Worker<T> implements Runnable {
 	 * @param start should worker start immediately
 	 * @param stateless is worker stateless (will not create Hibernate session)
 	 */
-	public Worker(Class<? extends PersistenceKeeper> clazz, String name, boolean start, boolean stateless) {
+	public Worker(Class<K> clazz, String name, boolean start, boolean stateless) {
 		this(clazz, name, 0, start, stateless);
 	}
 
@@ -68,7 +68,7 @@ public abstract class Worker<T> implements Runnable {
 	 * @param start shall worker start immediately
 	 * @param stateless is worker stateless (will not create Hibernate session)
 	 */
-	public Worker(Class<? extends PersistenceKeeper> clazz, String name, int capacity, boolean start, boolean stateless) {
+	public Worker(Class<K> clazz, String name, int capacity, boolean start, boolean stateless) {
 
 		this.clazz = clazz;
 		this.name = name;
@@ -138,7 +138,7 @@ public abstract class Worker<T> implements Runnable {
 		}
 	}
 
-	public abstract void work(Session session, T entity);
+	public abstract void work(K keeper, Session session, T entity);
 
 	@Override
 	public void run() {
@@ -148,7 +148,7 @@ public abstract class Worker<T> implements Runnable {
 		int bs = PersistenceKeeper.getBatchSize();
 		int c = 0;
 
-		PersistenceKeeper k = null;
+		K k = null;
 		Transaction t = null;
 		Session s = null;
 
@@ -201,7 +201,7 @@ public abstract class Worker<T> implements Runnable {
 			}
 
 			try {
-				work(s, m);
+				work(k, s, m);
 			} catch (HibernateException e) {
 
 				LOG.error("Hibernate error", e);
@@ -245,9 +245,9 @@ public abstract class Worker<T> implements Runnable {
 		}
 	}
 
-	protected PersistenceKeeper create() {
+	protected K create() {
 
-		PersistenceKeeper keeper = null;
+		K keeper = null;
 		try {
 			keeper = clazz.newInstance();
 		} catch (InstantiationException | IllegalAccessException e) {
