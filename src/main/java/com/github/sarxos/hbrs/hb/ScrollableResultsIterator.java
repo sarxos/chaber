@@ -18,7 +18,7 @@ public class ScrollableResultsIterator<T> implements Iterator<T>, Closeable {
 	 */
 	private static final Logger LOG = LoggerFactory.getLogger(ScrollableResultsIterator.class);
 
-	private static final int DEFAULT_FLUSH_LIMIT = PersistenceKeeper.getBatchSize();
+	private static final int DEFAULT_FLUSH_LIMIT = PersistenceKeeperImpl.getBatchSize();
 
 	private ScrollableResults sr;
 	private T next = null;

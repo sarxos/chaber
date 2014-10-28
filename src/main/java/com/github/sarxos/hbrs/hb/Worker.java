@@ -145,7 +145,7 @@ public abstract class Worker<K extends PersistenceKeeper, T> implements Runnable
 
 		T m = null;
 
-		int bs = PersistenceKeeper.getBatchSize();
+		int bs = PersistenceKeeperImpl.getBatchSize();
 		int c = 0;
 
 		K k = null;
