@@ -6,6 +6,8 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
 
+import org.hibernate.cfg.AnnotationConfiguration;
+
 
 /**
  * The annotation used on persistence keeper types to specify which file should be used to create
@@ -31,4 +33,10 @@ public @interface PersistentFactory {
 	 */
 	Class<? extends PersistenceFactoryPathResolver> resolver() default PersistenceFactoryPathResolver.class;
 
+	/**
+	 * Hibernate configuration class to be used.
+	 *
+	 * @return Hibernate configuration class
+	 */
+	Class<? extends AnnotationConfiguration> configuration() default AnnotationConfiguration.class;
 }

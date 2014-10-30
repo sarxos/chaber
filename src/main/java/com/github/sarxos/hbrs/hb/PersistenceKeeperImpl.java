@@ -101,9 +101,14 @@ public abstract class PersistenceKeeperImpl implements Closeable, PersistenceKee
 	private static final ConcurrentHashMap<String, SessionFactory> FACTORIES = new ConcurrentHashMap<String, SessionFactory>();
 
 	/**
-	 * Cache for class to hibernate session file path mapping.
+	 * Keeper class to hibernate session file path mapping.
 	 */
-	private static final Map<Class<? extends PersistenceKeeperImpl>, String> PATHS = new HashMap<>();
+	private static final Map<Class<? extends PersistenceKeeper>, String> PATHS = new HashMap<>();
+
+	/**
+	 * Keeper class to hibernate configuration class mapping.
+	 */
+	private static final Map<Class<? extends PersistenceKeeper>, Class<? extends AnnotationConfiguration>> CONFIGS = new HashMap<>();
 
 	/**
 	 * Batch size.
@@ -152,11 +157,21 @@ public abstract class PersistenceKeeperImpl implements Closeable, PersistenceKee
 	 * @return Session factory
 	 */
 	protected static SessionFactory buildSessionFactory() {
-		return buildSessionFactory((File) null);
+		return buildSessionFactory(null, (File) null);
 	}
 
-	protected static SessionFactory buildSessionFactory(String path) {
-		return buildSessionFactory(new File(path));
+	protected static SessionFactory buildSessionFactory(Class<? extends AnnotationConfiguration> clazz, String path) {
+
+		AnnotationConfiguration config;
+		try {
+			config = clazz.newInstance();
+		} catch (InstantiationException | IllegalAccessException e) {
+			throw new IllegalStateException("System was unable to instantiate " + clazz, e);
+		}
+
+		File file = new File(path);
+
+		return buildSessionFactory(config, file);
 	}
 
 	/**
@@ -165,9 +180,7 @@ public abstract class PersistenceKeeperImpl implements Closeable, PersistenceKee
 	 * @param file the file with hibernate configuration
 	 * @return Session factory
 	 */
-	protected static SessionFactory buildSessionFactory(File file) {
-
-		AnnotationConfiguration configuration = new AnnotationConfiguration();
+	protected static SessionFactory buildSessionFactory(AnnotationConfiguration configuration, File file) {
 
 		if (file == null) {
 			configuration = configuration.configure();
@@ -200,12 +213,33 @@ public abstract class PersistenceKeeperImpl implements Closeable, PersistenceKee
 	}
 
 	/**
+	 * Get hibernate configuration class for specific persistence keeper.
+	 *
+	 * @param clazz the persistent keeper class
+	 * @return Return Hibernate configuration class
+	 */
+	public static Class<? extends AnnotationConfiguration> getHibernateConfigurationClass(Class<? extends PersistenceKeeper> clazz) {
+
+		Class<? extends AnnotationConfiguration> cfg = CONFIGS.get(clazz);
+		if (cfg != null) {
+			return null;
+		}
+
+		PersistentFactory pf = clazz.getAnnotation(PersistentFactory.class);
+		if (pf == null) {
+			return null;
+		}
+
+		return pf.configuration();
+	}
+
+	/**
 	 * Get session factory path for specific persistence keeper.
 	 *
 	 * @param clazz the persistent keeper class
 	 * @return Return Hibernate session factory
 	 */
-	public static String getSessionFactoryPath(Class<? extends PersistenceKeeperImpl> clazz) {
+	public static String getSessionFactoryPath(Class<? extends PersistenceKeeper> clazz) {
 
 		String path = PATHS.get(clazz);
 		if (path != null) {
@@ -269,17 +303,22 @@ public abstract class PersistenceKeeperImpl implements Closeable, PersistenceKee
 	 * @param clazz the persistent keeper class
 	 * @return Return Hibernate session factory
 	 */
-	public static SessionFactory getSessionFactory(Class<? extends PersistenceKeeperImpl> clazz) {
-		return getSessionFactory(getSessionFactoryPath(clazz));
+	public static SessionFactory getSessionFactory(Class<? extends PersistenceKeeper> clazz) {
+
+		String path = getSessionFactoryPath(clazz);
+		Class<? extends AnnotationConfiguration> config = getHibernateConfigurationClass(clazz);
+
+		return getSessionFactory(config, path);
 	}
 
 	/**
 	 * Get session factory from specific file path.
 	 *
+	 * @param clazz the hibernate configuration class
 	 * @param path the path to session factory file
 	 * @return Return Hibernate session factory
 	 */
-	public static SessionFactory getSessionFactory(String path) {
+	public static SessionFactory getSessionFactory(Class<? extends AnnotationConfiguration> clazz, String path) {
 
 		SessionFactory factory = null;
 		SessionFactory prev = null;
@@ -288,7 +327,7 @@ public abstract class PersistenceKeeperImpl implements Closeable, PersistenceKee
 
 			synchronized (PersistenceKeeperImpl.class) {
 				if ((factory = FACTORIES.get(path)) == null) {
-					factory = buildSessionFactory(path);
+					factory = buildSessionFactory(clazz, path);
 					prev = FACTORIES.putIfAbsent(path, factory);
 				}
 			}
@@ -310,7 +349,11 @@ public abstract class PersistenceKeeperImpl implements Closeable, PersistenceKee
 
 	@Override
 	public SessionFactory getSessionFactory() {
-		return getSessionFactory(getSessionFactoryPath());
+
+		String path = getSessionFactoryPath();
+		Class<? extends AnnotationConfiguration> config = getHibernateConfigurationClass(getClass());
+
+		return getSessionFactory(config, path);
 	}
 
 	public static int getBatchSize() {
