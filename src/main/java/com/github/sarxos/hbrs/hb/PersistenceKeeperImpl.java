@@ -222,7 +222,7 @@ public abstract class PersistenceKeeperImpl implements Closeable, PersistenceKee
 
 		Class<? extends AnnotationConfiguration> cfg = CONFIGS.get(clazz);
 		if (cfg != null) {
-			return null;
+			return cfg;
 		}
 
 		PersistentFactory pf = clazz.getAnnotation(PersistentFactory.class);

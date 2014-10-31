@@ -22,6 +22,31 @@ public abstract class StreamCopyAbstractMapper<T extends Throwable> extends Abst
 	@Inject
 	private javax.inject.Provider<ContainerRequest> containerRequestProvider;
 
+	/**
+	 * Get string payload from byte array stream.
+	 *
+	 * @param stream the stream object
+	 * @return Payload
+	 */
+	private String getPayload(Object stream) {
+
+		if (stream == null) {
+			return null;
+		}
+
+		if (stream instanceof ByteArrayOutputStream) {
+			try (ByteArrayOutputStream baos = (ByteArrayOutputStream) stream) {
+				return baos.toString("UTF8");
+			} catch (IOException e) {
+				throw new IllegalStateException(e); // will never happen
+			}
+		}
+
+		LOG.error("Invalid object of {} detected in {}", stream.getClass(), getClass());
+
+		return null;
+	}
+
 	@Override
 	public Response toResponse(T exception) {
 
@@ -31,28 +56,10 @@ public abstract class StreamCopyAbstractMapper<T extends Throwable> extends Abst
 
 		String message = exception.getMessage().replaceAll("\\n", "");
 		Object stream = containerRequestProvider.get().getProperty(RequestStreamCopyFilter.PROPERTY);
+		String payload = getPayload(stream);
 
-		if (stream != null) {
-
-			ByteArrayOutputStream baos = (ByteArrayOutputStream) stream;
-
-			String payload = null;
-			try {
-				payload = baos.toString();
-			} finally {
-				try {
-					baos.close();
-				} catch (IOException e) {
-					LOG.error(e.getMessage(), e);
-				}
-			}
-
-			if (payload != null) {
-				LOG.warn("{} caused by invalid payload: {}", message, payload);
-			} else {
-				LOG.error("The payload object from stream is null! Exception is: {}", message);
-			}
-
+		if (payload != null) {
+			LOG.warn("{} caused by invalid payload: {}", message, payload);
 		} else {
 			LOG.warn(message);
 		}
