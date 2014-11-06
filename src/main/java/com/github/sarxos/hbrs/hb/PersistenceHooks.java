@@ -52,8 +52,11 @@ public class PersistenceHooks extends EmptyInterceptor {
 			return;
 		}
 
+		LOG.trace("Invoking hook {} on {}", a, entity);
+
 		for (Method m : getMethods(entity.getClass(), a)) {
 			try {
+				m.setAccessible(true);
 				m.invoke(entity, new Object[0]);
 			} catch (Exception e) {
 				throw new RuntimeException(e);

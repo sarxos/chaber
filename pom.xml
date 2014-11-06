@@ -10,7 +10,7 @@
 
 	<groupId>com.github.sarxos</groupId>
 	<artifactId>chaber</artifactId>
-	<version>1.4.29</version>
+	<version>1.4.30</version>
 
 	<name>Chaber</name>
 
@@ -22,7 +22,7 @@
 
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-		<jersey.version>2.6</jersey.version>
+		<jersey.version>2.6.1-VG</jersey.version>
 	</properties>
 
 	<scm>
@@ -214,7 +214,7 @@
 			<groupId>org.apache.commons</groupId>
 			<artifactId>commons-collections4</artifactId>
 			<version>4.0</version>
-		</dependency>		
+		</dependency>
 		<dependency>
 			<groupId>org.apache.commons</groupId>
 			<artifactId>commons-lang3</artifactId>
