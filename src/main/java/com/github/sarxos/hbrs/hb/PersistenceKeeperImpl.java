@@ -621,10 +621,6 @@ public abstract class PersistenceKeeperImpl implements Closeable, PersistenceKee
 				break;
 		}
 
-		// bean validation
-
-		validate(entity);
-
 		// hooks
 
 		if (type == CommitType.PERSIST) {
@@ -632,6 +628,10 @@ public abstract class PersistenceKeeperImpl implements Closeable, PersistenceKee
 		} else {
 			PersistenceHooks.hook(entity, PreUpdate.class);
 		}
+
+		// bean validation
+
+		validate(entity);
 
 		Session s = session();
 		Transaction t = s.beginTransaction();
@@ -721,7 +721,7 @@ public abstract class PersistenceKeeperImpl implements Closeable, PersistenceKee
 					break;
 			}
 
-			validate(entity);
+			// persistence hooks
 
 			switch (type) {
 				case PERSIST:
@@ -737,6 +737,10 @@ public abstract class PersistenceKeeperImpl implements Closeable, PersistenceKee
 					PersistenceHooks.hook(entity, PreUpdate.class);
 					break;
 			}
+
+			// bean validation
+
+			validate(entity);
 		}
 
 		if (entities.size() >= batchSize) {
