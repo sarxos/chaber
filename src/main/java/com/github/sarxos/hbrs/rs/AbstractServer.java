@@ -273,7 +273,7 @@ public abstract class AbstractServer implements Runnable {
 	/**
 	 * @return Certificate alias.
 	 */
-	protected abstract String getCertAliasPassword();
+	protected abstract String getCertAlias();
 
 	/**
 	 * @return HK2 service locator.
@@ -330,7 +330,7 @@ public abstract class AbstractServer implements Runnable {
 			sslContextFactory.setKeyStorePath(keystorePath);
 			sslContextFactory.setKeyStorePassword(getKeyStorePassword());
 			sslContextFactory.setKeyManagerPassword(getKeyManagerPassword());
-			sslContextFactory.setCertAlias(getCertAliasPassword());
+			sslContextFactory.setCertAlias(getCertAlias());
 			sslContextFactory.setExcludeCipherSuites(
 				"SSL_RSA_WITH_DES_CBC_SHA",
 				"SSL_DHE_RSA_WITH_DES_CBC_SHA",
