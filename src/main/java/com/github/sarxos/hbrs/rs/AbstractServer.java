@@ -201,6 +201,11 @@ public abstract class AbstractServer implements Runnable {
 	}
 
 	/**
+	 * @return The max POST size in bytes.
+	 */
+	protected abstract int getMaxFormContentSize();
+
+	/**
 	 * @return The number of acceptor threads.
 	 */
 	protected abstract int getAcceptorsNumber();
@@ -361,6 +366,7 @@ public abstract class AbstractServer implements Runnable {
 		ctx.setWar(webApplicationPath);
 		ctx.setAttribute(WebComponent.SERVICE_LOCATOR_ATTRIBUTE, getServiceLocator());
 
+		server.setAttribute("org.eclipse.jetty.server.Request.maxFormContentSize", getMaxFormContentSize());
 		server.setConnectors(connectors.toArray(new Connector[connectors.size()]));
 		server.setHandler(ctx);
 

@@ -10,7 +10,7 @@
 
 	<groupId>com.github.sarxos</groupId>
 	<artifactId>chaber</artifactId>
-	<version>1.5.2</version>
+	<version>1.5.3</version>
 
 	<name>Chaber</name>
 
@@ -77,6 +77,13 @@
 			<url>ftp://ftp.sarxos.pl/maven2</url>
 		</repository>
 	</distributionManagement>
+
+	<repositories>
+		<repository>
+			<id>sarxos-ftp-repo</id>
+			<url>http://repo.sarxos.pl/maven2</url>
+		</repository>
+	</repositories>
 
 	<profiles>
 		<profile>
@@ -278,7 +285,7 @@
 							<goal>jar</goal>
 						</goals>
 						<configuration>
-							<additionalparam>-Xdoclint:none</additionalparam>
+							<!-- <additionalparam>-Xdoclint:none</additionalparam> --> <!-- for Java 8 -->
 						</configuration>
 					</execution>
 				</executions>
