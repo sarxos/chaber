@@ -285,6 +285,11 @@ public abstract class AbstractServer implements Runnable {
 	 */
 	protected abstract ServiceLocator getServiceLocator();
 
+	/**
+	 * @return Server root path.
+	 */
+	protected abstract File getServerRoot();
+
 	@Override
 	public void run() {
 
@@ -329,7 +334,7 @@ public abstract class AbstractServer implements Runnable {
 
 		if (isHttpsEnabled()) {
 
-			String keystorePath = System.getProperty("jetty.keystore", "src/main/resources/keystore.jks");
+			String keystorePath = new File(getServerRoot(), "keystore.jks").getAbsolutePath();
 
 			SslContextFactory sslContextFactory = new SslContextFactory();
 			sslContextFactory.setKeyStorePath(keystorePath);
@@ -387,5 +392,7 @@ public abstract class AbstractServer implements Runnable {
 		} finally {
 			initialized.set(false);
 		}
+
+		LOG.info("Chaber server is now running");
 	}
 }
