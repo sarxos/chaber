@@ -26,7 +26,7 @@ import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
 import org.eclipse.jetty.webapp.WebAppContext;
 import org.glassfish.hk2.api.ServiceLocator;
-import org.glassfish.jersey.servlet.WebComponent;
+import org.glassfish.jersey.servlet.ServletProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xml.sax.EntityResolver;
@@ -364,7 +364,7 @@ public abstract class AbstractServer implements Runnable {
 		ctx.setServer(server);
 		ctx.setContextPath("/");
 		ctx.setWar(webApplicationPath);
-		ctx.setAttribute(WebComponent.SERVICE_LOCATOR_ATTRIBUTE, getServiceLocator());
+		ctx.setAttribute(ServletProperties.SERVICE_LOCATOR, getServiceLocator());
 
 		server.setAttribute("org.eclipse.jetty.server.Request.maxFormContentSize", getMaxFormContentSize());
 		server.setConnectors(connectors.toArray(new Connector[connectors.size()]));
