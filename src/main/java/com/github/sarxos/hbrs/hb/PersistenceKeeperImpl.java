@@ -64,8 +64,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 
 /**
- * This class provide generic access to the Hibernate persistence layer. It's very important to
- * close persistence keeper when it's no longer necessary.
+ * This class provide generic access to the Hibernate persistence layer. It's
+ * very important to close persistence keeper when it's no longer necessary.
  *
  * @author Bartosz Firyn (bfiryn)
  */
@@ -275,7 +275,8 @@ public abstract class PersistenceKeeperImpl implements Closeable, PersistenceKee
 				try {
 					ObjectName oname = new ObjectName(fname);
 					resolved = (String) server.invoke(oname, "resolve", new Object[] { path }, new String[] { "java.lang.String" });
-				} catch (MalformedObjectNameException | InstanceNotFoundException | ReflectionException | MBeanException e) {
+				} catch (MalformedObjectNameException | InstanceNotFoundException | ReflectionException
+					| MBeanException e) {
 					LOG.trace("Managed bean exception", e);
 					LOG.debug("Cannot resolve path using managed bean, will create new instance");
 				}
@@ -623,7 +624,7 @@ public abstract class PersistenceKeeperImpl implements Closeable, PersistenceKee
 
 		// hooks
 
-		if (type == CommitType.PERSIST) {
+		if (type == CommitType.PERSIST || type == CommitType.SAVE) {
 			PersistenceHooks.hook(entity, PrePersist.class);
 		} else {
 			PersistenceHooks.hook(entity, PreUpdate.class);
