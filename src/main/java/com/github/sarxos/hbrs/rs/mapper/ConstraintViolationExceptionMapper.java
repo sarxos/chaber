@@ -36,7 +36,12 @@ public class ConstraintViolationExceptionMapper extends AbstractExceptionMapper<
 			String name = null;
 
 			if (clazz == v.getRootBeanClass()) {
-				name = property.substring(0, property.lastIndexOf("."));
+				int k = property.lastIndexOf(".");
+				if (k != -1) {
+					name = property.substring(0, k);
+				} else {
+					name = property;
+				}
 			} else {
 
 				property = property.substring(property.lastIndexOf(".") + 1);
