@@ -48,8 +48,6 @@ public abstract class AbstractServer implements Runnable {
 	private AtomicBoolean started = new AtomicBoolean();
 	private AtomicBoolean initialized = new AtomicBoolean();
 
-	private String webApplicationPath = null;
-
 	private Connector connector = null;
 
 	public void setConnector(Connector connector) {
@@ -142,7 +140,16 @@ public abstract class AbstractServer implements Runnable {
 	 *
 	 * @param path
 	 */
-	public void setWebApplicationPath(String path) {
+	public void checkWebApplicationPath(File file) {
+
+		if (!file.exists()) {
+			throw new IllegalArgumentException("Web application path does not exist");
+		}
+		if (!file.isDirectory()) {
+			throw new IllegalArgumentException("Web application path is not a directory");
+		}
+
+		String path = file.getAbsolutePath();
 
 		if (StringUtils.isEmpty(path)) {
 			throw new IllegalArgumentException("Web application path cannot be empty");
@@ -158,15 +165,9 @@ public abstract class AbstractServer implements Runnable {
 		} catch (IOException e) {
 			throw new IllegalStateException(String.format("Cannot read '%s' file", webxml), e);
 		}
-
-		this.webApplicationPath = path;
 	}
 
-	public void start() {
-
-		if (webApplicationPath == null) {
-			throw new IllegalStateException("Web application path has not been defined");
-		}
+	public AbstractServer start() {
 
 		if (started.compareAndSet(false, true)) {
 
@@ -181,23 +182,28 @@ public abstract class AbstractServer implements Runnable {
 					Thread.sleep(500);
 				} catch (InterruptedException e) {
 					LOG.debug("Thread has been interrupted");
-					return;
+					break;
 				}
 			} while (!initialized.get());
 		}
+
+		return this;
 	}
 
-	public void stop() {
+	public AbstractServer stop() {
+
 		if (started.compareAndSet(true, false)) {
 			do {
 				try {
 					Thread.sleep(100);
 				} catch (InterruptedException e) {
 					LOG.debug("Thread has been interrupted when doing stop");
-					return;
+					break;
 				}
 			} while (initialized.get());
 		}
+
+		return this;
 	}
 
 	/**
@@ -290,6 +296,11 @@ public abstract class AbstractServer implements Runnable {
 	 */
 	protected abstract File getServerRoot();
 
+	/**
+	 * @return Path to the web application directory (where WEB-INF is located).
+	 */
+	protected abstract File getServerWebappPath();
+
 	@Override
 	public void run() {
 
@@ -365,10 +376,13 @@ public abstract class AbstractServer implements Runnable {
 			connectors.add(https);
 		}
 
+		File webappPath = getServerWebappPath();
+		checkWebApplicationPath(webappPath);
+
 		WebAppContext ctx = new WebAppContext();
 		ctx.setServer(server);
 		ctx.setContextPath("/");
-		ctx.setWar(webApplicationPath);
+		ctx.setWar(webappPath.getAbsolutePath());
 		ctx.setAttribute(ServletProperties.SERVICE_LOCATOR, getServiceLocator());
 
 		server.setAttribute("org.eclipse.jetty.server.Request.maxFormContentSize", getMaxFormContentSize());
