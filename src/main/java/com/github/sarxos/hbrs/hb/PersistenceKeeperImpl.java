@@ -42,6 +42,7 @@ import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.xpath.XPathException;
 
 import org.glassfish.jersey.process.internal.RequestScoped;
+import org.hibernate.AssertionFailure;
 import org.hibernate.Hibernate;
 import org.hibernate.HibernateException;
 import org.hibernate.Query;
@@ -141,7 +142,11 @@ public abstract class PersistenceKeeperImpl implements Closeable, PersistenceKee
 			LOG.debug("Closing {} persistence keeper", getClass());
 
 			if (session != null && session.isOpen()) {
-				session.flush();
+				try {
+					session.flush();
+				} catch (AssertionFailure | HibernateException e) {
+					session.clear();
+				}
 				session.close();
 			}
 
