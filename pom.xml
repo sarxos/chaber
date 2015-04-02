@@ -5,11 +5,11 @@
   <parent>
     <groupId>com.github.sarxos</groupId>
     <artifactId>oss-parent</artifactId>
-    <version>1</version>
+    <version>2</version>
   </parent>
 
   <artifactId>chaber</artifactId>
-  <version>1.5.14</version>
+  <version>1.5.15-SNAPSHOT</version>
   <name>Chaber</name>
 
   <description>
