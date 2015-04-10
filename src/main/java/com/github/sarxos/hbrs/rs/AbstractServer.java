@@ -22,6 +22,7 @@ import org.eclipse.jetty.server.NetworkTrafficServerConnector;
 import org.eclipse.jetty.server.SecureRequestCustomizer;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
+import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
 import org.eclipse.jetty.webapp.WebAppContext;
@@ -301,6 +302,15 @@ public abstract class AbstractServer implements Runnable {
 	 */
 	protected abstract File getServerWebappPath();
 
+	/**
+	 * Initialize server.
+	 *
+	 * @param context
+	 */
+	protected void initialize(ServletContextHandler context) {
+		// do nothing, but can override
+	}
+
 	@Override
 	public void run() {
 
@@ -388,6 +398,8 @@ public abstract class AbstractServer implements Runnable {
 		server.setAttribute("org.eclipse.jetty.server.Request.maxFormContentSize", getMaxFormContentSize());
 		server.setConnectors(connectors.toArray(new Connector[connectors.size()]));
 		server.setHandler(ctx);
+
+		initialize(ctx);
 
 		try {
 			server.start();
