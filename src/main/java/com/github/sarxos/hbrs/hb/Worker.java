@@ -140,6 +140,51 @@ public abstract class Worker<K extends PersistenceKeeper, T> implements Runnable
 
 	public abstract void work(K keeper, Session session, T entity);
 
+	private void commit(Transaction t) {
+		if (t != null && t.isActive()) {
+			try {
+				t.commit();
+			} catch (HibernateException e) {
+				t.rollback();
+				LOG.error(e.getMessage(), e);
+			}
+		}
+	}
+
+	private void flush(K k, Session s) {
+		if (s != null && s.isOpen()) {
+			try {
+				s.flush();
+			} catch (HibernateException e) {
+				LOG.error(e.getMessage(), e);
+			} finally {
+				s.clear();
+				k.close();
+			}
+		}
+	}
+
+	private void flush(Session s) {
+		try {
+			s.flush();
+		} catch (HibernateException e) {
+			LOG.error(e.getMessage(), e);
+		} finally {
+			s.clear();
+		}
+	}
+
+	private void rollback(Transaction t, Session s, K k) {
+		try {
+			t.rollback();
+		} catch (Exception e2) {
+			LOG.error("Cannot rollback", e2);
+		} finally {
+			s.clear();
+			k.close();
+		}
+	}
+
 	@Override
 	public void run() {
 
@@ -153,93 +198,56 @@ public abstract class Worker<K extends PersistenceKeeper, T> implements Runnable
 		Session s = null;
 
 		while (isRunning()) {
-
-			if (items.isEmpty()) {
-
-				if (!stateless) {
-
-					if (t != null && t.isActive()) {
-						try {
-							t.commit();
-						} catch (HibernateException e) {
-							t.rollback();
-							LOG.error(e.getMessage(), e);
-						}
+			try {
+				if (items.isEmpty()) {
+					if (!stateless) {
+						commit(t);
+						flush(k, s);
+						c = 0;
 					}
-
-					if (s != null && s.isOpen()) {
-						try {
-							s.flush();
-							s.clear();
-						} catch (HibernateException e) {
-							s.clear();
-							LOG.error(e.getMessage(), e);
-						} finally {
-							k.close();
-						}
-					}
-
-					c = 0;
+					LOG.debug("All awaiting items has been worked out");
 				}
 
-				LOG.debug("All awaiting items has been worked out");
-			}
-
-			try {
 				m = items.take();
-			} catch (InterruptedException e) {
-				LOG.debug("Message persister interrupted: " + e.getMessage(), e);
-				return;
-			}
-
-			if (!stateless) {
-				if (s == null || !s.isOpen()) {
-					k = create();
-					s = k.session();
-					t = s.beginTransaction();
-				}
-			}
-
-			try {
-				work(k, s, m);
-			} catch (HibernateException e) {
-
-				LOG.error("Hibernate error", e);
 
 				if (!stateless) {
-					try {
-						t.rollback();
-					} catch (Exception e2) {
-						LOG.error("Cannot rollback", e2);
-					} finally {
-						s.clear();
-						k.close();
+					if (s == null || !s.isOpen()) {
+						k = create();
+						s = k.session();
+						t = s.beginTransaction();
 					}
 				}
 
+				try {
+					work(k, s, m);
+				} catch (HibernateException e) {
+					LOG.error("Hibernate error", e);
+					if (!stateless) {
+						rollback(t, s, k);
+					}
+				} catch (Exception e) {
+					LOG.error(e.getMessage(), e);
+				}
+
+				if (!stateless) {
+					if (c > 0 && c++ % bs == 0) {
+						commit(t);
+						flush(s);
+						t = s.beginTransaction();
+					}
+				}
+
+			} catch (InterruptedException e) {
+				LOG.warn("Worker has been interrupted", e);
+				return;
 			} catch (Exception e) {
-				LOG.error(e.getMessage(), e);
-			}
 
-			if (!stateless) {
-				if (c > 0 && c++ % bs == 0) {
+				LOG.error("Exception when working: " + e.getMessage(), e);
 
-					try {
-						t.commit();
-					} catch (HibernateException e) {
-						t.rollback();
-						LOG.error(e.getMessage(), e);
-					}
-
-					try {
-						s.flush();
-					} catch (HibernateException e) {
-						LOG.error(e.getMessage(), e);
-					} finally {
-						s.clear();
-					}
-
-					t = s.beginTransaction();
+				try {
+					k.close();
+				} catch (Exception e1) {
+					LOG.error("Exception when closing keeper: " + e1.getMessage(), e1);
 				}
 			}
 		}
