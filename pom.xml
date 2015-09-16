@@ -9,7 +9,7 @@
   </parent>
 
   <artifactId>chaber</artifactId>
-  <version>1.5.18</version>
+  <version>1.5.19-SNAPSHOT</version>
   <name>Chaber</name>
 
   <description>
@@ -28,7 +28,7 @@
     <connection>scm:git:git@github.com:sarxos/chaber.git</connection>
     <developerConnection>scm:git:git@github.com:sarxos/chaber.git</developerConnection>
     <url>git@github.com:sarxos/chaber.git</url>
-    <tag>chaber-1.5.18</tag>
+    <tag>chaber-1.5.15</tag>
   </scm>
 
   <licenses>
